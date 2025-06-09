@@ -9,6 +9,11 @@ import SwiftUI
 
 @main
 struct PennyPathApp: App {
+    // Initialize Firebase when the app starts
+    init() {
+        FirebaseManager.shared.configure()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
