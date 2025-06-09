@@ -1,0 +1,90 @@
+//
+//  AddBNPLPlanViewModel.swift
+//  PennyPath
+//
+//  Created by Robert Cobain on 09/06/2025.
+//
+
+import Foundation
+import FirebaseAuth
+import FirebaseFirestore
+
+@MainActor
+class AddBNPLPlanViewModel: ObservableObject {
+    
+    // MARK: - Form Input Fields
+    @Published var provider: String = ""
+    @Published var planName: String = ""
+    @Published var feeType: FeeType = .none
+    @Published var feeValueStr: String = ""
+    @Published var installmentsStr: String = "4"
+    @Published var paymentFrequency: PaymentFrequency = .biweekly
+    @Published var initialPaymentPercentStr: String = "25"
+    @Published var linkedAccountId: String = "" // Optional
+    
+    // MARK: - State Management
+    @Published var isLoading = false
+    @Published var alertMessage: String?
+    
+    // Computed property to check if the form is valid for saving
+    var isFormValid: Bool {
+        !provider.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !planName.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !installmentsStr.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+    
+    // MARK: - Firestore Logic
+    
+    func savePlan() async {
+        guard isFormValid else {
+            alertMessage = "Please fill in all required fields: Provider, Plan Name, and Installments."
+            return
+        }
+        
+        guard let userId = Auth.auth().currentUser?.uid else {
+            alertMessage = "You must be logged in to save a plan."
+            return
+        }
+        
+        isLoading = true
+        
+        // --- Build the BNPLPlan object from form data ---
+        
+        let feeValue = feeType == .none ? nil : Double(feeValueStr)
+        guard let installments = Int(installmentsStr) else {
+            alertMessage = "Please enter a valid number for installments."
+            isLoading = false
+            return
+        }
+        
+        let initialPayment = initialPaymentPercentStr.isEmpty ? nil : Double(initialPaymentPercentStr)
+        
+        let newPlan = BNPLPlan(
+            provider: provider,
+            planName: planName,
+            feeType: feeType,
+            feeValue: feeValue,
+            installments: installments,
+            paymentFrequency: paymentFrequency,
+            initialPaymentPercent: initialPayment,
+            linkedAccountId: linkedAccountId.isEmpty ? nil : linkedAccountId
+        )
+        
+        // --- Save to Firestore ---
+        
+        let db = Firestore.firestore()
+        let collectionPath = "users/\(userId)/bnpl_plans"
+        
+        do {
+            // Using `setData(from:)` automatically handles the Codable conversion.
+            try db.collection(collectionPath).addDocument(from: newPlan)
+            print("BNPL Plan successfully saved!")
+            alertMessage = "Plan saved successfully!"
+            isLoading = false
+        } catch {
+            print("Error saving BNPL plan: \(error.localizedDescription)")
+            alertMessage = "Error: \(error.localizedDescription)"
+            isLoading = false
+        }
+    }
+}
