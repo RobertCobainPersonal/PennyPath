@@ -8,6 +8,8 @@
 //  It holds all form state and contains the logic to construct and
 //  save the simplified Account object to Firestore.
 //
+//  UPDATED: Restored account types and fields to match the updated model.
+//
 
 import Foundation
 import FirebaseFirestore
@@ -19,7 +21,7 @@ class AddAccountViewModel: ObservableObject {
     // MARK: - Form Input Fields
     @Published var name: String = ""
     @Published var institution: String = ""
-    @Published var type: AccountType = .checking
+    @Published var type: AccountType = .currentAccount // Default to UK naming
     
     // Using strings for text fields to handle user input gracefully
     @Published var currentBalanceStr: String = ""
@@ -30,6 +32,11 @@ class AddAccountViewModel: ObservableObject {
     @Published var originalAmountStr: String = ""
     @Published var interestRateStr: String = ""
     
+    // New fields for restored types
+    @Published var counterpartyStr: String = ""
+    @Published var originalCreditorStr: String = ""
+    @Published var settlementAmountStr: String = ""
+
     // Date properties
     @Published var openingBalanceDate: Date = Date()
     @Published var originationDate: Date = Date()
@@ -78,7 +85,10 @@ class AddAccountViewModel: ObservableObject {
             apr: toDouble(aprStr),
             originalAmount: toDouble(originalAmountStr),
             interestRate: toDouble(interestRateStr),
-            originationDate: originalAmountStr.isEmpty ? nil : Timestamp(date: originationDate)
+            originationDate: originalAmountStr.isEmpty ? nil : Timestamp(date: originationDate),
+            counterparty: counterpartyStr.isEmpty ? nil : counterpartyStr,
+            originalCreditor: originalCreditorStr.isEmpty ? nil : originalCreditorStr,
+            settlementAmount: toDouble(settlementAmountStr)
         )
         
         // Add BNPL-specific fields if applicable
