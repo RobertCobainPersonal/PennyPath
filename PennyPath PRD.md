@@ -4,7 +4,7 @@
 
 PennyPath is a mobile-first personal finance iOS app (built in SwiftUI) focused on helping users manage credit-based financial products. The app supports tracking of credit cards, loans, BNPL agreements, budgeting, business expense tagging, and cash flow forecasting.
 
-This updated PRD reflects progress to date and introduces a user-defined BNPL plan system, a transaction-first BNPL architecture, and an upcoming payment scheduling model for accurate forecasting.
+This updated PRD reflects a now working backend foundation including user-defined BNPL plans, a transaction-first architecture, and a flexible recurring payment model that will power all future debt, subscription, and transfer schedules.
 
 🌟 Goals
 
@@ -24,7 +24,7 @@ Track real-time balances across credit products
 
 Add historical and future transactions with accurate balance tracking
 
-Schedule BNPL and recurring credit payments
+Schedule BNPL, recurring credit, and general transfers or payments
 
 Set monthly budgets and receive cash flow alerts
 
@@ -42,82 +42,63 @@ Define custom BNPL repayment plans to reflect provider-specific terms
 
 ✅ Transaction Model Implemented
 
-Supports both standard and BNPL transactions
+✅ ScheduledPayment Model Implemented (Reusable)
 
-Includes reference to BNPL plans, initial and fee amounts, linked accounts, and future scheduled payments
+Supports all future recurring payments: BNPL, loan repayments, credit card minimums, recurring transfers, bills, and cash flow projections
 
-🔧 Updated Firestore transactions/{transactionId} Schema
+Designed with optional transactionId to decouple from transaction-only logic
 
-{
-  "id": "txn_001",
-  "accountId": "bnpl_zilch_01",
-  "linkedAccountId": "monzo_main",
-  "amount": 120.00,
-  "date": "2025-06-15",
-  "category": "Electronics",
-  "description": "Headphones",
-  "isBNPL": true,
-  "bnplPlanId": "plan_zilch6wk",
-  "initialPaymentAmount": 30.00,
-  "feeAmount": 4.99,
-  "scheduledPaymentIds": ["sp_01", "sp_02", "sp_03"]
-}
-
-📝 Next Step: Scheduled Payment Model
-
-Purpose:
-
-Enable the app to track, visualize, and forecast upcoming BNPL or recurring credit payments tied to transactions.
-
-Model: ScheduledPayment
+📆 New: ScheduledPayment Model (Generalized)
 
 struct ScheduledPayment: Identifiable, Codable {
     var id: String
-    var transactionId: String
+    var transactionId: String?
     var dueDate: Date
     var amount: Double
     var sourceAccountId: String
+    var targetAccountId: String?
     var paid: Bool
     var paymentDate: Date?
+    var recurrence: RecurrenceType?      // weekly, monthly, etc.
+    var isAutoPayEnabled: Bool?
+    var notes: String?
 }
 
-These scheduled payments will:
+enum RecurrenceType: String, Codable {
+    case none, weekly, biweekly, monthly, quarterly, yearly
+}
 
-Be generated automatically when a BNPL transaction is created
+🔍 Prompt for Coding AI (ScheduledPayment UI View)
 
-Update balances on both the funding account and BNPL account when marked as paid
+We have a fully working model for ScheduledPayment that includes support for all types of recurring payments (BNPL, loan, transfer, bills, etc.).
 
-Feed into the cash flow forecasting engine
-
-🔍 Prompt for Coding AI (Scheduled Payments Model)
-
-We’ve built a SwiftUI app for finance tracking (PennyPath) and completed Auth, Account, BNPLPlan, and Transaction models. Now we need a model to handle future BNPL and credit payment scheduling.
-
-### Task: Create the ScheduledPayment model in Swift
+### Task: Build a SwiftUI view to display a list of upcoming ScheduledPayments for the logged-in user
 
 ### Requirements:
-- Track individual payments from BNPL or recurring transactions
-- Must include:
-  - `id`, `transactionId`, `dueDate`, `amount`
-  - `sourceAccountId`: which account the payment is drawn from
-  - `paid: Bool`
-  - `paymentDate`: optional timestamp of when payment was made
+- Query Firestore for `scheduled_payments` tied to the current user
+- Filter: only show upcoming payments (where `paid == false` and `dueDate >= now`)
+- Group by `dueDate` or `account`
+- Display:
+  - `dueDate`, `amount`, `sourceAccountId`, `targetAccountId`, recurrence icon (if applicable)
+  - Mark payment as paid with a toggle or swipe action
+- Add navigation bar title and empty state
 
 ### Output:
-- Swift `ScheduledPayment` model (Codable, Identifiable)
-- No need to write Firestore write logic or UI yet
+- Full SwiftUI View code
+- Firestore query logic
+- Optional: preview data for SwiftUI canvas
 
 📊 Prompt Guidelines for Next AI Steps
 
-"Use this PRD and help me implement the ScheduledPayment model."
+"Use this PRD and help me build the UI to display upcoming scheduled payments for testing."
 
-"Now that I have a transaction and payment model, help me create logic to generate scheduled payments based on the selected BNPL plan."
+"After that, help me generate payments dynamically from a BNPL transaction and plan."
 
 📈 Remaining MVP Features
 
 View accounts and transactions from Firestore
 
-Add Transaction view
+Add Transaction view with BNPL support
 
 Generate and track scheduled payments
 
@@ -130,3 +111,4 @@ Event tagging + business expense receipts
 Home dashboard
 
 Final polish & test
+
