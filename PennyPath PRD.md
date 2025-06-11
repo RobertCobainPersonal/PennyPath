@@ -4,7 +4,7 @@
 
 PennyPath is a mobile-first personal finance iOS app (built in SwiftUI) focused on helping users manage credit-based financial products. The app supports tracking of credit cards, loans, BNPL agreements, budgeting, business expense tagging, and cash flow forecasting.
 
-This updated PRD now introduces the MainTabView, a unified root navigation container that allows access to all major features including accounts, transactions, payments, budgeting, and settings.
+The app now includes a working root navigation shell (MainTabView) and has implemented the foundational data models and basic views. We are moving into the next phase: building transaction logic, refreshing state between views, and fleshing out the full feature set.
 
 🌟 Goals
 
@@ -50,65 +50,89 @@ Navigate seamlessly across the app using a unified tab bar
 
 ✅ MainTabView Created
 
-Tab-based container
+📆 In Progress
 
-Access to Accounts, Payments, Add Transaction, Budget (placeholder), Settings (placeholder)
+AddTransactionView + BNPL Logic
 
-📆 In Progress: Add Transaction View + BNPL Logic
+User can add a normal or BNPL transaction
 
-Purpose:
+BNPL plans define installment frequency and fees
 
-Create a SwiftUI interface and backend logic that allows a user to:
+ScheduledPayments auto-generated upon submission
 
-Add a normal or BNPL transaction
+Balance updates cascade to linked accounts
 
-Generate scheduled payments based on selected BNPL plan
+Upcoming Development Tasks
 
-Update account balances accordingly
+1. TransactionService (HIGH)
 
-🔍 Prompt for Coding AI (MainTabView Navigation)
+Abstract Firestore write logic for transactions
 
-struct MainTabView: View {
-    var body: some View {
-        TabView {
-            AccountListView()
-                .tabItem {
-                    Label("Accounts", systemImage: "creditcard")
-                }
+Include addTransaction, fetchTransactions(forAccountId:)
 
-            ScheduledPaymentsListView()
-                .tabItem {
-                    Label("Payments", systemImage: "calendar.badge.clock")
-                }
+Handle linking of scheduled payments and balance updates
 
-            AddTransactionView()
-                .tabItem {
-                    Label("Add", systemImage: "plus.circle")
-                }
+2. BNPL Plan Creation View (HIGH)
 
-            BudgetsView() // Placeholder
-                .tabItem {
-                    Label("Budget", systemImage: "chart.pie.fill")
-                }
+User-defined plans: duration, frequency, fee logic
 
-            SettingsView() // Placeholder
-                .tabItem {
-                    Label("Settings", systemImage: "gear")
-                }
-        }
-    }
-}
+Required for submitting BNPL transactions
 
-To enable, update your App.swift to display MainTabView() after login.
+3. View Refresh Infrastructure (HIGH)
+
+Ensure views like AddTransactionView update after new accounts or plans
+
+Use ObservableObject + @Published store for app-wide state sync
+
+4. AccountDetailView (MED)
+
+View transactions for a specific account
+
+Include scheduled payments and visual balance
+
+5. Transfer as a Transaction (MED)
+
+Logic to create two-sided transactions (source/target account)
+
+Update both balances on commit
+
+6. Category Management View (LOW)
+
+Add, edit, and manage categories
+
+Used in AddTransactionView and future budgeting screens
+
+🔍 Prompt for Coding AI: TransactionService.swift
+
+We’re building a SwiftUI iOS app using Firebase called PennyPath. We've implemented models for Accounts, Transactions, ScheduledPayments, and BNPLPlans. Now we need to implement a TransactionService that handles:
+
+- Saving new transactions to Firestore
+- Creating scheduled payments linked to a transaction
+- Updating source and target account balances (support for transfers)
+
+### Requirements:
+- Swift class or struct: TransactionService
+- Methods:
+  - `addTransaction(_:)`
+  - `fetchTransactions(for accountId: String)`
+  - Logic to attach scheduled payments if provided
+- Use `async/await` and `FirebaseFirestoreSwift`
+- Modular, documented code
 
 📈 Remaining MVP Features
 
-Complete AddTransactionView and payment generation logic
+Implement TransactionService
 
-Budgets by category + budget progress
+Add BNPL Plan Creation UI
 
-Cash flow forecast + alerts
+Add AccountDetailView
 
-Event tagging + business expense receipts
+Build category management UI
+
+Add transfer logic
+
+Wire up global app refresh state
+
+Implement budgets + forecasting
 
 Final polish & test
