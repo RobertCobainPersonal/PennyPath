@@ -18,7 +18,7 @@ struct ContentView: View {
                 LoginView()
             } else {
                 // User is logged in, show the main app content
-                AccountListView()
+                MainTabView()
             }
         }
         // Provide the viewModel to all child views

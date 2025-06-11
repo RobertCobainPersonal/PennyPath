@@ -4,7 +4,8 @@
 //
 //  Created by Robert Cobain on 09/06/2025.
 //
-
+//  REFACTORED: Replaced TextField with a Picker for Default Linked Account.
+//
 
 import SwiftUI
 
@@ -18,6 +19,7 @@ struct AddBNPLPlanView: View {
     var body: some View {
         NavigationView {
             Form {
+                // ... (Plan Details, Fee Structure, Repayment Schedule sections are the same)
                 Section(header: Text("Plan Details")) {
                     TextField("Provider (e.g., Klarna, Zilch)", text: $viewModel.provider)
                     TextField("Plan Name (e.g., Pay in 3)", text: $viewModel.planName)
@@ -66,11 +68,17 @@ struct AddBNPLPlanView: View {
                     }
                 }
                 
+                // !! UPDATED SECTION !!
                 Section(header: Text("Optional Settings")) {
-                    TextField("Default Linked Account ID", text: $viewModel.linkedAccountId)
-                        .foregroundColor(.secondary)
+                    Picker("Default Linked Account", selection: $viewModel.linkedAccountId) {
+                        Text("None").tag("") // Allow user to select no default
+                        ForEach(viewModel.bnplAccounts) { account in
+                            Text(account.name).tag(account.id ?? "")
+                        }
+                    }
                 }
                 
+                // ... (Save button section is the same)
                 Section {
                     Button(action: {
                         Task {
@@ -90,10 +98,7 @@ struct AddBNPLPlanView: View {
                 }
             }
             .navigationTitle("Create BNPL Plan")
-            .navigationBarItems(leading: Button("Cancel") {
-                dismiss()
-            })
-            // Watch for changes in the alert message from the view model
+            .navigationBarItems(leading: Button("Cancel") { dismiss() })
             .onChange(of: viewModel.alertMessage) { message in
                 if message != nil {
                     showingAlert = true
@@ -101,7 +106,6 @@ struct AddBNPLPlanView: View {
             }
             .alert("BNPL Plan", isPresented: $showingAlert, actions: {
                 Button("OK") {
-                    // if it saved successfully, dismiss the view
                     if viewModel.alertMessage == "Plan saved successfully!" {
                         dismiss()
                     }
@@ -113,7 +117,6 @@ struct AddBNPLPlanView: View {
         }
     }
 }
-
 
 // A simple stepper that works directly with a String binding
 struct Stepper: View {

@@ -4,28 +4,32 @@
 //
 //  Created by Robert Cobain on 09/06/2025.
 //
+//  REFACTORED: Wrapped account rows in a NavigationLink.
+//
 
 import SwiftUI
 
 struct AccountListView: View {
-    // ViewModel for handling authentication state
     @EnvironmentObject var authViewModel: AuthViewModel
-    // ViewModel for fetching and holding the account list
     @StateObject private var accountViewModel = AccountListViewModel()
     
-    // State to control the presentation of the AddAccountView sheet
     @State private var showingAddAccountSheet = false
 
     var body: some View {
         NavigationStack {
             Group {
-                // If there are accounts, show them in a list
                 if !accountViewModel.accounts.isEmpty {
                     List(accountViewModel.accounts) { account in
-                        AccountRowView(account: account)
+                        // Wrap the existing row view in a NavigationLink
+                        NavigationLink {
+                            // Destination is our new detail view
+                            AccountDetailView(account: account)
+                        } label: {
+                            AccountRowView(account: account)
+                        }
                     }
                 } else {
-                    // Show a helpful placeholder if no accounts exist
+                    // ... (ContentUnavailableView remains the same)
                     ContentUnavailableView(
                         "No Accounts Yet",
                         systemImage: "wallet.pass",
@@ -35,7 +39,6 @@ struct AccountListView: View {
             }
             .navigationTitle("Accounts")
             .toolbar {
-                // Button to present the AddAccountView sheet
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         showingAddAccountSheet.toggle()
@@ -44,7 +47,6 @@ struct AccountListView: View {
                     }
                 }
                 
-                // Sign out button
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Sign Out") {
                         authViewModel.signOut()
@@ -53,10 +55,9 @@ struct AccountListView: View {
                 }
             }
             .sheet(isPresented: $showingAddAccountSheet) {
-                AddAccountView() // Presents the existing AddAccountView
+                AddAccountView()
             }
             .onAppear {
-                // Fetch accounts when the view appears
                 accountViewModel.fetchAccounts()
             }
         }
