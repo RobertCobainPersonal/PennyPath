@@ -6,47 +6,36 @@ PennyPath is a mobile-first personal finance iOS app (built in SwiftUI) focused 
 
 This updated PRD reflects a now working backend foundation including user-defined BNPL plans, a transaction-first architecture, and a flexible recurring payment model that will power all future debt, subscription, and transfer schedules.
 
+⸻
+
 🌟 Goals
 
 Business Goals
-
-Deliver a functional MVP in SwiftUI for iOS with Firebase backend
-
-Build a credit-first finance tracking experience
-
-Implement smart forecasting, budgeting, and alerting
-
-Show debt reduction and upcoming obligations clearly
+	•	Deliver a functional MVP in SwiftUI for iOS with Firebase backend
+	•	Build a credit-first finance tracking experience
+	•	Implement smart forecasting, budgeting, and alerting
+	•	Show debt reduction and upcoming obligations clearly
 
 User Goals
+	•	Track real-time balances across credit products
+	•	Add historical and future transactions with accurate balance tracking
+	•	Schedule BNPL, recurring credit, and general transfers or payments
+	•	Set monthly budgets and receive cash flow alerts
+	•	Tag and organize expenses by event or business purpose
+	•	Define custom BNPL repayment plans to reflect provider-specific terms
 
-Track real-time balances across credit products
-
-Add historical and future transactions with accurate balance tracking
-
-Schedule BNPL, recurring credit, and general transfers or payments
-
-Set monthly budgets and receive cash flow alerts
-
-Tag and organize expenses by event or business purpose
-
-Define custom BNPL repayment plans to reflect provider-specific terms
+⸻
 
 ✅ Progress to Date (as of June 2025)
+	•	✅ Firebase Auth Integration Completed
+	•	✅ Account Model and Add Account View Completed
+	•	✅ BNPL Plan Model and View Completed
+	•	✅ Transaction Model Implemented
+	•	✅ ScheduledPayment Model Implemented (Reusable)
+	•	Supports all future recurring payments: BNPL, loan repayments, credit card minimums, recurring transfers, bills, and cash flow projections
+	•	Designed with optional transactionId to decouple from transaction-only logic
 
-✅ Firebase Auth Integration Completed
-
-✅ Account Model and Add Account View Completed
-
-✅ BNPL Plan Model and View Completed
-
-✅ Transaction Model Implemented
-
-✅ ScheduledPayment Model Implemented (Reusable)
-
-Supports all future recurring payments: BNPL, loan repayments, credit card minimums, recurring transfers, bills, and cash flow projections
-
-Designed with optional transactionId to decouple from transaction-only logic
+⸻
 
 📆 New: ScheduledPayment Model (Generalized)
 
@@ -68,6 +57,9 @@ enum RecurrenceType: String, Codable {
     case none, weekly, biweekly, monthly, quarterly, yearly
 }
 
+
+⸻
+
 🔍 Prompt for Coding AI (ScheduledPayment UI View)
 
 We have a fully working model for ScheduledPayment that includes support for all types of recurring payments (BNPL, loan, transfer, bills, etc.).
@@ -88,27 +80,23 @@ We have a fully working model for ScheduledPayment that includes support for all
 - Firestore query logic
 - Optional: preview data for SwiftUI canvas
 
+
+⸻
+
 📊 Prompt Guidelines for Next AI Steps
 
-"Use this PRD and help me build the UI to display upcoming scheduled payments for testing."
+“Use this PRD and help me build the UI to display upcoming scheduled payments for testing.”
 
-"After that, help me generate payments dynamically from a BNPL transaction and plan."
+“After that, help me generate payments dynamically from a BNPL transaction and plan.”
+
+⸻
 
 📈 Remaining MVP Features
-
-View accounts and transactions from Firestore
-
-Add Transaction view with BNPL support
-
-Generate and track scheduled payments
-
-Budgets by category + budget progress
-
-Cash flow forecast + alerts
-
-Event tagging + business expense receipts
-
-Home dashboard
-
-Final polish & test
-
+	•	View accounts and transactions from Firestore
+	•	Add Transaction view with BNPL support
+	•	Generate and track scheduled payments
+	•	Budgets by category + budget progress
+	•	Cash flow forecast + alerts
+	•	Event tagging + business expense receipts
+	•	Home dashboard
+	•	Final polish & test
