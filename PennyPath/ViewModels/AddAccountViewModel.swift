@@ -4,12 +4,6 @@
 //
 //  Created by Robert Cobain on 09/06/2025.
 //
-//  REFACTORED: This ViewModel supports the new "flat" Account model.
-//  It holds all form state and contains the logic to construct and
-//  save the simplified Account object to Firestore.
-//
-//  UPDATED: Restored account types and fields to match the updated model.
-//
 
 import Foundation
 import FirebaseFirestore
@@ -21,9 +15,8 @@ class AddAccountViewModel: ObservableObject {
     // MARK: - Form Input Fields
     @Published var name: String = ""
     @Published var institution: String = ""
-    @Published var type: AccountType = .currentAccount // Default to UK naming
+    @Published var type: AccountType = .currentAccount
     
-    // Using strings for text fields to handle user input gracefully
     @Published var currentBalanceStr: String = ""
     @Published var openingBalanceStr: String = ""
     @Published var outstandingBalanceStr: String = ""
@@ -32,12 +25,10 @@ class AddAccountViewModel: ObservableObject {
     @Published var originalAmountStr: String = ""
     @Published var interestRateStr: String = ""
     
-    // New fields for restored types
     @Published var counterpartyStr: String = ""
     @Published var originalCreditorStr: String = ""
     @Published var settlementAmountStr: String = ""
 
-    // Date properties
     @Published var openingBalanceDate: Date = Date()
     @Published var originationDate: Date = Date()
     
@@ -45,35 +36,27 @@ class AddAccountViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var alertMessage: String?
 
-    // Computed property to check if the form is valid for saving
     var isFormValid: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty &&
         !institution.trimmingCharacters(in: .whitespaces).isEmpty &&
         !currentBalanceStr.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    // MARK: - Firestore Logic
+    // MARK: - Firestore Logic (Refactored to use AccountService)
     
     func saveAccount() async {
         guard isFormValid else {
             alertMessage = "Please fill in all required fields: Name, Institution, and Current Balance."
             return
         }
-
-        guard let userId = Auth.auth().currentUser?.uid else {
-            alertMessage = "You must be logged in to save an account."
-            return
-        }
-
+        
         isLoading = true
 
-        // Helper to safely convert string to double
         func toDouble(_ string: String?) -> Double? {
             guard let string = string, !string.isEmpty else { return nil }
             return Double(string)
         }
 
-        // Construct the new, flat Account object
         var newAccount = Account(
             name: name,
             type: type,
@@ -91,19 +74,15 @@ class AddAccountViewModel: ObservableObject {
             settlementAmount: toDouble(settlementAmountStr)
         )
         
-        // Add BNPL-specific fields if applicable
         if type == .bnpl {
             newAccount.isBNPL = true
             newAccount.outstandingBalance = toDouble(outstandingBalanceStr)
         }
 
-        // --- Save to Firestore ---
-        let db = Firestore.firestore()
-        let collectionPath = "users/\(userId)/accounts"
-
+        // --- Use the new AccountService ---
         do {
-            try db.collection(collectionPath).addDocument(from: newAccount)
-            print("Account successfully saved!")
+            try await AccountService.shared.saveAccount(newAccount)
+            print("Account successfully saved via AccountService!")
             alertMessage = "Account saved successfully!"
         } catch {
             print("Error saving account: \(error.localizedDescription)")

@@ -5,7 +5,6 @@
 //  Created by Robert Cobain on 11/06/2025.
 //
 
-
 import SwiftUI
 
 struct MainTabView: View {
@@ -15,15 +14,16 @@ struct MainTabView: View {
                 .tabItem {
                     Label("Accounts", systemImage: "creditcard")
                 }
+            
+            // The new Transactions tab
+            TransactionListView()
+                .tabItem {
+                    Label("Transactions", systemImage: "list.bullet.rectangle")
+                }
 
             ScheduledPaymentsListView()
                 .tabItem {
                     Label("Payments", systemImage: "calendar.badge.clock")
-                }
-
-            AddTransactionView()
-                .tabItem {
-                    Label("Add", systemImage: "plus.circle")
                 }
 
             BudgetsView() // Placeholder

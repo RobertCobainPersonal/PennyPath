@@ -9,6 +9,9 @@ import SwiftUI
 
 @main
 struct PennyPathApp: App {
+    // 1. Create a single instance of the AppStore for the app's lifecycle
+    @StateObject private var appStore = AppStore()
+
     // Initialize Firebase when the app starts
     init() {
         FirebaseManager.shared.configure()
@@ -17,6 +20,8 @@ struct PennyPathApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                // 2. Inject the store into the environment, making it available to all child views
+                .environmentObject(appStore)
         }
     }
 }
