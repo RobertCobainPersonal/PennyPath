@@ -30,9 +30,12 @@ struct TransactionListView: View {
     var body: some View {
         NavigationStack {
             List(viewModel.transactions) { transaction in
-                // Look up the currency for the transaction's account, defaulting to GBP.
+                // Find the category object that matches the transaction's categoryId
+                let category = store.categories.first { $0.id == transaction.categoryId }
                 let currencyCode = currencyLookup[transaction.accountId] ?? "GBP"
-                TransactionRowView(transaction: transaction, currencyCode: currencyCode)
+                
+                // Pass both the transaction and the found category to the row view
+                TransactionRowView(transaction: transaction, category: category, currencyCode: currencyCode)
             }
             .navigationTitle("Transactions")
             .toolbar {

@@ -5,14 +5,6 @@
 //  Created by Robert Cobain on 12/06/2025.
 //
 
-
-//
-//  AddIncomeViewModel.swift
-//  PennyPath
-//
-//  Created by Robert Cobain on 12/06/2025.
-//
-
 import Foundation
 import FirebaseFirestore
 import FirebaseAuth
@@ -38,7 +30,8 @@ class AddIncomeViewModel: ObservableObject {
             accountId: selectedAccountId,
             date: date,
             description: description,
-            category: "Income", // Category is fixed for income
+            // UPDATED: Set categoryId to nil, as "Income" is not a user category
+            categoryId: nil,
             isBNPL: false,
             bnplPlan: nil,
             bnplFundingAccountId: nil,

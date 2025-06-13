@@ -152,7 +152,11 @@ struct AccountDetailView: View {
                         .foregroundColor(.secondary)
                 } else {
                     ForEach(viewModel.transactions) { transaction in
-                        TransactionRowView(transaction: transaction, currencyCode: account.currency)
+                        // Find the category object that matches the transaction's categoryId
+                        let category = store.categories.first { $0.id == transaction.categoryId }
+                        
+                        // Pass both the transaction and the found category to the row view
+                        TransactionRowView(transaction: transaction, category: category, currencyCode: account.currency)
                     }
                 }
             }

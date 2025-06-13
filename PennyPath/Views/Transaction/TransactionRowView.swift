@@ -5,18 +5,11 @@
 //  Created by Robert Cobain on 11/06/2025.
 //
 
-
-//
-//  TransactionRowView.swift
-//  PennyPath
-//
-//  Created by Robert Cobain on 11/06/2025.
-//
-
 import SwiftUI
 
 struct TransactionRowView: View {
     let transaction: Transaction
+    let category: Category? // UPDATED: Pass in the whole category object
     let currencyCode: String
     
     var body: some View {
@@ -31,7 +24,8 @@ struct TransactionRowView: View {
                             .font(.caption)
                             .foregroundColor(.cyan)
                     }
-                    Text(transaction.category.isEmpty ? "Uncategorized" : transaction.category)
+                    // UPDATED: Use the category name, or "Uncategorized" if nil
+                    Text(category?.name ?? "Uncategorized")
                 }
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -53,17 +47,20 @@ struct TransactionRowView: View {
     }
 }
 
+// Preview will also need to be updated slightly
 struct TransactionRowView_Previews: PreviewProvider {
     static var previews: some View {
         let mockTransaction = Transaction(
             accountId: "123",
             amount: -49.99,
             date: .init(date: Date()),
-            category: "Shopping",
-            description: "New T-Shirt"
+            description: "New T-Shirt",
+            categoryId: "abc"
         )
         
-        TransactionRowView(transaction: mockTransaction, currencyCode: "GBP")
+        let mockCategory = Category(id: "abc", name: "Shopping", iconName: "cart.fill", colorHex: "#FFFFFF")
+        
+        TransactionRowView(transaction: mockTransaction, category: mockCategory, currencyCode: "GBP")
             .padding()
     }
 }
