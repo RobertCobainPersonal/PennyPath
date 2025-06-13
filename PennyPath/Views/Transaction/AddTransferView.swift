@@ -83,12 +83,13 @@ struct AddTransferView: View {
 }
 
 
+// CORRECTED: The PreviewProvider now uses the correct Account model.
 struct AddTransferView_Previews: PreviewProvider {
     static var previews: some View {
         let mockStore = AppStore()
         
-        let sampleAccount1 = Account(name: "Current Account", type: .currentAccount, institution: "Monzo", currentBalance: 1500)
-        let sampleAccount2 = Account(name: "Savings", type: .savings, institution: "HSBC", currentBalance: 5000)
+        let sampleAccount1 = Account(name: "Current Account", type: .currentAccount, institution: "Monzo", anchorBalance: 1500, anchorDate: .init(date: Date()))
+        let sampleAccount2 = Account(name: "Savings", type: .savings, institution: "HSBC", anchorBalance: 5000, anchorDate: .init(date: Date()))
         
         mockStore.accounts = [sampleAccount1, sampleAccount2]
         
