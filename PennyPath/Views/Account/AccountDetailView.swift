@@ -10,10 +10,15 @@ import SwiftUI
 struct AccountDetailView: View {
     
     @StateObject private var viewModel: AccountDetailViewModel
+    @EnvironmentObject var store: AppStore // Access the central store for BNPL plans
     
     private let account: Account
     
-    // Initializer to pass the selected account and set up the StateObject
+    // A computed property to filter BNPL plans for this specific account
+    private var associatedBNPLPlans: [BNPLPlan] {
+        store.bnplPlans.filter { $0.provider.lowercased() == account.institution.lowercased() }
+    }
+    
     init(account: Account) {
         self.account = account
         _viewModel = StateObject(wrappedValue: AccountDetailViewModel(account: account))
@@ -26,7 +31,7 @@ struct AccountDetailView: View {
                 HStack {
                     Text("Type")
                     Spacer()
-                    Text(viewModel.accountTypeLabel)
+                    Text(account.type.rawValue)
                         .foregroundColor(.secondary)
                 }
 
@@ -121,6 +126,36 @@ struct AccountDetailView: View {
                         .foregroundColor(.secondary)
                 }
             }
+            
+            // Section that appears only for BNPL accounts
+            if account.type == .bnpl {
+                Section(header: Text("Associated BNPL Plans")) {
+                    if associatedBNPLPlans.isEmpty {
+                        Text("No plans found for \(account.institution).")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(associatedBNPLPlans) { plan in
+                            Text(plan.planName)
+                        }
+                    }
+                    
+                    NavigationLink("Manage All BNPL Plans") {
+                        BNPLPlanListView()
+                    }
+                }
+            }
+            
+            // Section to display transactions
+            Section(header: Text("Recent Transactions")) {
+                if viewModel.transactions.isEmpty {
+                    Text("No transactions found for this account.")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(viewModel.transactions) { transaction in
+                        TransactionRowView(transaction: transaction, currencyCode: account.currency)
+                    }
+                }
+            }
         }
         .navigationTitle(account.name)
         .onAppear {
@@ -133,20 +168,22 @@ struct AccountDetailView: View {
 
 struct AccountDetailView_Previews: PreviewProvider {
     static var previews: some View {
-        // Create a mock account to use for the preview
-        let mockCreditCard = Account(
-            id: "cc123",
-            name: "Barclaycard Platinum",
-            type: .creditCard,
-            institution: "Barclays",
-            currentBalance: 450.75,
-            creditLimit: 1500.00
+        let mockBNPLAccount = Account(
+            name: "Klarna",
+            type: .bnpl,
+            institution: "Klarna",
+            currentBalance: -150.00
         )
         
-        // It's good practice to wrap previews in a NavigationView
-        // to see the navigation title correctly.
-        NavigationView {
-            AccountDetailView(account: mockCreditCard)
+        let mockStore = AppStore()
+        let samplePlan = BNPLPlan(provider: "Klarna", planName: "Pay in 3", feeType: .none, installments: 3, paymentFrequency: .monthly)
+        let otherPlan = BNPLPlan(provider: "Zilch", planName: "Pay in 4", feeType: .none, installments: 4, paymentFrequency: .biweekly)
+        
+        mockStore.bnplPlans = [samplePlan, otherPlan]
+        
+        return NavigationView {
+            AccountDetailView(account: mockBNPLAccount)
+                .environmentObject(mockStore)
         }
     }
 }

@@ -5,51 +5,58 @@
 //  Created by Robert Cobain on 12/06/2025.
 //
 
-
-//
-//  AddExpenseView.swift
-//  PennyPath
-//
-//  Created by Robert Cobain on 12/06/2025.
-//
-
 import SwiftUI
 
 struct AddExpenseView: View {
     @StateObject private var viewModel = AddExpenseViewModel()
     @EnvironmentObject var store: AppStore
-    
-    // We pass this in from the parent view to tell it to close the sheet.
     var onSave: () -> Void
+
+    // --- NEW: Computed property to find the selected category object ---
+    private var selectedCategory: Category? {
+        store.categories.first { $0.id == viewModel.categoryId }
+    }
 
     private var selectedPlan: BNPLPlan? {
         store.bnplPlans.first { $0.id == viewModel.selectedPlanId }
     }
     
+    // --- UPDATED: This now calls the ViewModel's logic ---
     private var schedulePreview: BNPLSchedulePreview? {
-        guard let plan = selectedPlan, let amount = Double(viewModel.amountStr) else { return nil }
-        
-        // This is a simplified preview calculation for demonstration.
-        // A more robust implementation would move this logic into the ViewModel.
-        let fee = 0.0 // Simplified
-        let totalDebt = amount + fee
-        let remaining = totalDebt / Double(plan.installments)
-        
-        return .init(initialPayment: 0, fee: fee, installmentAmount: remaining, remainingBalance: totalDebt, schedule: [])
+        guard let plan = selectedPlan else { return nil }
+        return viewModel.calculateSchedulePreview(for: plan)
     }
     
     var body: some View {
-        Form {
-            Section(header: Text("Expense Details")) {
-                TextField("Amount", text: $viewModel.amountStr)
-                    .keyboardType(.decimalPad)
-                DatePicker("Date", selection: $viewModel.date, displayedComponents: .date)
-                TextField("Description", text: $viewModel.description)
-                TextField("Category", text: $viewModel.category)
-            }
+            Form {
+                Section(header: Text("Expense Details")) {
+                    TextField("Amount", text: $viewModel.amountStr)
+                        .keyboardType(.decimalPad)
+                    DatePicker("Date", selection: $viewModel.date, displayedComponents: .date)
+                    TextField("Description", text: $viewModel.description)
+                    
+                    // --- UPDATED: Replaced TextField with a NavigationLink ---
+                    NavigationLink {
+                        // Destination is our new selection view
+                        CategorySelectionView(selectedCategoryId: $viewModel.categoryId)
+                    } label: {
+                        HStack {
+                            Text("Category")
+                            Spacer()
+                            if let category = selectedCategory {
+                                // Display the selected category's name
+                                Text(category.name)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("Select")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
             
             Section(header: Text("Account")) {
-                Picker("Account", selection: $viewModel.selectedAccountId) {
+                Picker("Charge to Account", selection: $viewModel.selectedAccountId) {
                     ForEach(store.accounts) { account in
                         Text(account.name).tag(account.id ?? "")
                     }
@@ -77,9 +84,8 @@ struct AddExpenseView: View {
                     Task {
                         do {
                             try await viewModel.save(plan: selectedPlan, schedule: schedulePreview)
-                            onSave() // Close the sheet on success
+                            onSave()
                         } catch {
-                            // Handle error, e.g., show an alert
                             print("Error saving expense: \(error.localizedDescription)")
                         }
                     }
@@ -88,7 +94,6 @@ struct AddExpenseView: View {
             }
         }
         .onAppear {
-            // Set default selections
             if viewModel.selectedAccountId.isEmpty, let account = store.accounts.first {
                 viewModel.selectedAccountId = account.id ?? ""
             }

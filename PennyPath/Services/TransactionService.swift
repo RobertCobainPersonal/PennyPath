@@ -9,16 +9,15 @@ import Foundation
 import FirebaseFirestore
 import FirebaseAuth
 
-// A struct to pass transaction data cleanly from a ViewModel to the Service.
+// 1. UPDATED: This struct now uses categoryId
 struct TransactionDetails {
     let amount: Double
     let accountId: String
     let date: Date
     let description: String
-    let category: String
+    let categoryId: String? // Changed from category: String
     let isBNPL: Bool
     
-    // Optional BNPL data
     let bnplPlan: BNPLPlan?
     let bnplFundingAccountId: String?
     let bnplSchedule: BNPLSchedulePreview?
@@ -31,7 +30,6 @@ class TransactionService {
     
     private let db = Firestore.firestore()
     
-    /// The primary method to add a new transaction to Firestore. It handles both standard and BNPL types.
     func addTransaction(details: TransactionDetails, for userId: String) async throws {
         if details.isBNPL {
             try await saveBNPLTransaction(details: details, userId: userId)
@@ -40,14 +38,9 @@ class TransactionService {
         }
     }
     
-    // --- NEW METHOD FOR HANDLING TRANSFERS ---
-    
-    /// Atomically transfers an amount between two user-owned accounts.
-    /// This creates two separate transaction records and updates both account balances in a single batch.
-    /// - Throws: An error if the user is not authenticated or if the Firestore write fails.
     func addTransfer(fromAccount: Account, toAccount: Account, amount: Double, date: Date, description: String) async throws {
         guard let userId = Auth.auth().currentUser?.uid,
-              let fromAccountId = fromAccount.id, // Get ID from the account object
+              let fromAccountId = fromAccount.id,
               let toAccountId = toAccount.id else {
             throw NSError(domain: "TransactionService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid user or account data."])
         }
@@ -55,23 +48,23 @@ class TransactionService {
         let batch = db.batch()
         let transactionCollection = db.collection("users/\(userId)/transactions")
         
+        // 2. UPDATED: Prepare the outflow transaction with categoryId
         let outflowTransaction = Transaction(
             accountId: fromAccountId,
             amount: -abs(amount),
             date: Timestamp(date: date),
-            category: "Transfer",
-            // CORRECTED: Use the account name in the description
-            description: "Transfer to \(toAccount.name)"
+            description: "Transfer to \(toAccount.name)",
+            categoryId: nil // Transfers don't have a user-set category
         )
         try batch.setData(from: outflowTransaction, forDocument: transactionCollection.document())
         
+        // 2. UPDATED: Prepare the inflow transaction with categoryId
         let inflowTransaction = Transaction(
             accountId: toAccountId,
             amount: abs(amount),
             date: Timestamp(date: date),
-            category: "Transfer",
-            // CORRECTED: Use the account name in the description
-            description: "Transfer from \(fromAccount.name)"
+            description: "Transfer from \(fromAccount.name)",
+            categoryId: nil // Transfers don't have a user-set category
         )
         try batch.setData(from: inflowTransaction, forDocument: transactionCollection.document())
 
@@ -86,20 +79,19 @@ class TransactionService {
     
     // MARK: - Private Helper Methods
     
-    /// Handles the simple case: a standard, one-off transaction.
     private func saveStandardTransaction(details: TransactionDetails, userId: String) async throws {
         let batch = db.batch()
         let transactionCollection = db.collection("users/\(userId)/transactions")
         
-        // Ensure standard expenses are negative and income is positive
-        let sign = details.category == "Income" ? 1.0 : -1.0
+        let sign = (details.amount >= 0) ? 1.0 : -1.0 // Sign should depend on income/expense, let's assume positive is income
         
+        // 3. UPDATED: Use categoryId from details
         let newTransaction = Transaction(
             accountId: details.accountId,
             amount: abs(details.amount) * sign,
             date: Timestamp(date: details.date),
-            category: details.category,
-            description: details.description
+            description: details.description,
+            categoryId: details.categoryId
         )
         
         try batch.setData(from: newTransaction, forDocument: transactionCollection.document())
@@ -109,7 +101,6 @@ class TransactionService {
         try await batch.commit()
     }
     
-    /// Handles the complex BNPL case, creating multiple documents atomically as required by the PRD.
     private func saveBNPLTransaction(details: TransactionDetails, userId: String) async throws {
         guard let plan = details.bnplPlan,
               let schedule = details.bnplSchedule,
@@ -121,7 +112,6 @@ class TransactionService {
         let transactionRef = db.collection("users/\(userId)/transactions").document()
         var scheduledPaymentIds = [String]()
         
-        // 1. Create all ScheduledPayment documents.
         for payment in schedule.schedule {
             let paymentRef = db.collection("users/\(userId)/scheduled_payments").document()
             let newScheduledPayment = ScheduledPayment(
@@ -134,14 +124,14 @@ class TransactionService {
             scheduledPaymentIds.append(paymentRef.documentID)
         }
         
-        // 2. Create the master Transaction document.
+        // 4. UPDATED: Use categoryId from details
         let newTransaction = Transaction(
             id: transactionRef.documentID,
             accountId: details.accountId,
-            amount: details.amount, // BNPL is a credit, so it's a positive value on the BNPL account
+            amount: details.amount,
             date: Timestamp(date: details.date),
-            category: details.category,
             description: details.description,
+            categoryId: details.categoryId,
             isBNPL: true,
             bnplPlanId: plan.id,
             initialPaymentAmount: schedule.initialPayment,
@@ -151,12 +141,9 @@ class TransactionService {
         )
         try batch.setData(from: newTransaction, forDocument: transactionRef)
         
-        // 3. Update account balances.
-        // The funding account pays the initial payment
         let fundingAccountRef = db.document("users/\(userId)/accounts/\(fundingAccountId)")
         batch.updateData(["currentBalance": FieldValue.increment(-schedule.initialPayment)], forDocument: fundingAccountRef)
         
-        // The BNPL account's balance increases by the amount of the purchase
         let bnplAccountRef = db.document("users/\(userId)/accounts/\(details.accountId)")
         batch.updateData(["currentBalance": FieldValue.increment(details.amount)], forDocument: bnplAccountRef)
         

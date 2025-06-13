@@ -26,8 +26,8 @@ struct Transaction: Codable, Identifiable {
     var accountId: String
     var amount: Double
     var date: Timestamp
-    var category: String
     var description: String
+    var categoryId: String?
     
     // MARK: - BNPL-Specific Fields
     

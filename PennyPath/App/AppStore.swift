@@ -14,21 +14,20 @@ class AppStore: ObservableObject {
     
     @Published var accounts = [Account]()
     @Published var bnplPlans = [BNPLPlan]()
+    @Published var categories = [Category]() // New property for categories
     
     private var db = Firestore.firestore()
     private var accountsListener: ListenerRegistration?
     private var plansListener: ListenerRegistration?
+    private var categoriesListener: ListenerRegistration? // New listener
     
-    // The initializer is called when the AppStore is created.
-    // It sets up a listener that watches for authentication changes.
     init() {
         Auth.auth().addStateDidChangeListener { [weak self] _, user in
             if let user = user {
-                // When a user logs in, fetch their data.
                 self?.fetchAccounts(userId: user.uid)
                 self?.fetchBNPLPlans(userId: user.uid)
+                self?.fetchCategories(userId: user.uid) // Fetch categories on login
             } else {
-                // When a user logs out, clear all local data.
                 self?.clearData()
             }
         }
@@ -66,11 +65,26 @@ class AppStore: ObservableObject {
             }
     }
     
-    // Stops listening to changes and clears the arrays, typically on logout.
+    func fetchCategories(userId: String) {
+        let collectionPath = "users/\(userId)/categories"
+        categoriesListener?.remove()
+        categoriesListener = db.collection(collectionPath)
+            .addSnapshotListener { querySnapshot, error in
+                guard let documents = querySnapshot?.documents else {
+                    print("Error fetching categories: \(error?.localizedDescription ?? "Unknown error")")
+                    return
+                }
+                self.categories = documents.compactMap { try? $0.data(as: Category.self) }
+            }
+    }
+    
     private func clearData() {
-            accountsListener?.remove()
-            plansListener?.remove()
-            self.accounts.removeAll()
-            self.bnplPlans.removeAll()
-        }
+        accountsListener?.remove()
+        plansListener?.remove()
+        categoriesListener?.remove() // Clear the new listener
+        
+        self.accounts.removeAll()
+        self.bnplPlans.removeAll()
+        self.categories.removeAll() // Clear the new array
+    }
 }
