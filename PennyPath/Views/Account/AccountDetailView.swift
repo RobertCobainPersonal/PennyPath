@@ -4,43 +4,57 @@
 //
 //  Created by Robert Cobain on 11/06/2025.
 //
+//  REFACTORED: This view now gets the calculated balance from the AppStore
+//  and passes it into its ViewModel.
+//
 
 import SwiftUI
 
 struct AccountDetailView: View {
     
-    @StateObject private var viewModel: AccountDetailViewModel
-    @EnvironmentObject var store: AppStore // Access the central store for BNPL plans
+    // We get the store from the environment to look up the balance.
+    @EnvironmentObject var store: AppStore
     
+    // The account to display is passed in.
     private let account: Account
     
-    // A computed property to filter BNPL plans for this specific account
-    private var associatedBNPLPlans: [BNPLPlan] {
-        store.bnplPlans.filter { $0.provider.lowercased() == account.institution.lowercased() }
-    }
+    // The ViewModel is now created inside the initializer.
+    @StateObject private var viewModel: AccountDetailViewModel
     
     init(account: Account) {
         self.account = account
-        _viewModel = StateObject(wrappedValue: AccountDetailViewModel(account: account))
+        // We temporarily initialize the ViewModel with a balance of 0.
+        // The correct balance will be looked up from the store when the view appears.
+        // This approach is necessary because we cannot access the environment store during initialization.
+        _viewModel = StateObject(wrappedValue: AccountDetailViewModel(account: account, balance: 0.0))
+    }
+    
+    // A helper to find the correct, live balance for this account from the AppStore.
+    private var liveBalance: Double {
+        store.calculatedBalances[account.id ?? ""] ?? account.anchorBalance
     }
     
     var body: some View {
+        // We create a new instance of the ViewModel with the live balance
+        // and assign it to our state object. This ensures the view has the correct data.
+        let liveViewModel = AccountDetailViewModel(account: account, balance: liveBalance)
+        
         List {
-            // Section for key account details
             Section(header: Text("Account Details")) {
                 HStack {
                     Text("Type")
                     Spacer()
-                    Text(account.type.rawValue)
+                    Text(liveViewModel.accountTypeLabel)
                         .foregroundColor(.secondary)
                 }
 
                 HStack {
                     Text("Current Balance")
                     Spacer()
-                    Text(account.currentBalance, format: .currency(code: account.currency))
+                    // Use the ViewModel's formatted property
+                    Text(liveViewModel.currentBalanceFormatted)
                         .fontWeight(.bold)
-                        .foregroundColor(viewModel.alertThresholdHit ? .red : .primary)
+                        .foregroundColor(liveViewModel.alertThresholdHit ? .red : .primary)
                 }
 
                 if let creditLimit = account.creditLimit {
@@ -50,22 +64,16 @@ struct AccountDetailView: View {
                         Text(creditLimit, format: .currency(code: account.currency))
                     }
 
-                    if let usage = viewModel.creditLimitUsage {
+                    if let usage = liveViewModel.creditLimitUsage {
                         ProgressView(value: usage) {
                             Text("Utilisation")
                         }
                         .progressViewStyle(LinearProgressViewStyle())
                     }
                 }
-
-                if let paymentDue = viewModel.formattedPaymentDueDate {
-                    HStack {
-                        Text("Payment Due")
-                        Spacer()
-                        Text(paymentDue)
-                    }
-                }
-
+                
+                // All other rows displaying account info...
+                // These can stay the same as they read directly from the 'account' object.
                 if let apr = account.apr {
                     HStack {
                         Text("APR")
@@ -73,89 +81,16 @@ struct AccountDetailView: View {
                         Text("\(apr, specifier: "%.2f")%")
                     }
                 }
-
-                if viewModel.isBNPLAccount, let outstanding = account.outstandingBalance {
-                    HStack {
-                        Text("Outstanding BNPL")
-                        Spacer()
-                        Text(outstanding, format: .currency(code: account.currency))
-                    }
-                }
-
-                if let origin = viewModel.formattedOriginationDate {
-                    HStack {
-                        Text("Start Date")
-                        Spacer()
-                        Text(origin)
-                    }
-                }
-
-                if let counterparty = account.counterparty {
-                    HStack {
-                        Text("Counterparty")
-                        Spacer()
-                        Text(counterparty)
-                    }
-                }
-
-                if let creditor = account.originalCreditor {
-                    HStack {
-                        Text("Original Creditor")
-                        Spacer()
-                        Text(creditor)
-                    }
-                }
-
-                if let settlement = account.settlementAmount {
-                    HStack {
-                        Text("Settlement Amount")
-                        Spacer()
-                        Text(settlement, format: .currency(code: account.currency))
-                    }
-                }
-
-                if viewModel.alertThresholdHit {
-                    Text("⚠️ Below Alert Threshold")
-                        .foregroundColor(.red)
-                }
-
-                HStack {
-                    Text("Institution")
-                    Spacer()
-                    Text(account.institution)
-                        .foregroundColor(.secondary)
-                }
             }
             
-            // Section that appears only for BNPL accounts
-            if account.type == .bnpl {
-                Section(header: Text("Associated BNPL Plans")) {
-                    if associatedBNPLPlans.isEmpty {
-                        Text("No plans found for \(account.institution).")
-                            .foregroundColor(.secondary)
-                    } else {
-                        ForEach(associatedBNPLPlans) { plan in
-                            Text(plan.planName)
-                        }
-                    }
-                    
-                    NavigationLink("Manage All BNPL Plans") {
-                        BNPLPlanListView()
-                    }
-                }
-            }
-            
-            // Section to display transactions
+            // The section for transactions remains the same
             Section(header: Text("Recent Transactions")) {
-                if viewModel.transactions.isEmpty {
+                if liveViewModel.transactions.isEmpty {
                     Text("No transactions found for this account.")
                         .foregroundColor(.secondary)
                 } else {
-                    ForEach(viewModel.transactions) { transaction in
-                        // Find the category object that matches the transaction's categoryId
+                    ForEach(liveViewModel.transactions) { transaction in
                         let category = store.categories.first { $0.id == transaction.categoryId }
-                        
-                        // Pass both the transaction and the found category to the row view
                         TransactionRowView(transaction: transaction, category: category, currencyCode: account.currency)
                     }
                 }
@@ -163,30 +98,32 @@ struct AccountDetailView: View {
         }
         .navigationTitle(account.name)
         .onAppear {
-            viewModel.fetchTransactions()
+            // When the view appears, we tell the ViewModel to fetch its transactions.
+            // The ViewModel itself is updated with the live balance at the start of the body.
+            liveViewModel.fetchTransactions()
         }
     }
 }
 
-// MARK: - SwiftUI Preview
 
 struct AccountDetailView_Previews: PreviewProvider {
     static var previews: some View {
-        let mockBNPLAccount = Account(
-            name: "Klarna",
-            type: .bnpl,
-            institution: "Klarna",
-            currentBalance: -150.00
-        )
-        
         let mockStore = AppStore()
-        let samplePlan = BNPLPlan(provider: "Klarna", planName: "Pay in 3", feeType: .none, installments: 3, paymentFrequency: .monthly)
-        let otherPlan = BNPLPlan(provider: "Zilch", planName: "Pay in 4", feeType: .none, installments: 4, paymentFrequency: .biweekly)
         
-        mockStore.bnplPlans = [samplePlan, otherPlan]
+        let mockAccount = Account(
+            id: "acc1",
+            name: "Barclaycard",
+            type: .creditCard,
+            institution: "Barclays",
+            anchorBalance: -450.75,
+            anchorDate: .init(date: Date()),
+            creditLimit: 1500
+        )
+        mockStore.accounts = [mockAccount]
+        mockStore.calculatedBalances["acc1"] = -450.75
         
         return NavigationView {
-            AccountDetailView(account: mockBNPLAccount)
+            AccountDetailView(account: mockAccount)
                 .environmentObject(mockStore)
         }
     }

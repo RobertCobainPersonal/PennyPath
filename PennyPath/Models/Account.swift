@@ -4,30 +4,15 @@
 //
 //  Created by Robert Cobain on 09/06/2025.
 //
-//  REFACTORED: This model has been simplified to remove nested details
-//  and prepare for transaction-level BNPL plan application. The complex
-//  `AccountDetails` enum has been replaced by a simple `AccountType` enum
-//  and optional properties on the main struct.
-//
-//  UPDATED: Restored UK-centric naming and additional account types
-//  based on user feedback.
-//
-//  FIXED: Re-added the `icon` computed property to the struct.
+//  REFACTORED: The model has been updated to use a fixed anchor balance.
+//  The 'currentBalance' is no longer stored in Firestore and will be
+//  calculated on the client side based on the anchor and transactions.
 //
 
 import Foundation
 import FirebaseFirestore
 import SwiftUI
 
-// MARK: - AccountType Enum
-
-/**
- * A simple enumeration to categorize the financial account type.
- * This replaces the previous complex, nested enum structure.
- *
- * UPDATED: Naming convention changed to UK standard (Current Account)
- * and Family Loan / Collection Account types have been re-added.
- */
 enum AccountType: String, Codable, CaseIterable, Identifiable {
     case currentAccount = "Current Account"
     case savings = "Savings Account"
@@ -40,7 +25,6 @@ enum AccountType: String, Codable, CaseIterable, Identifiable {
 
     var id: String { self.rawValue }
 
-    // Helper to provide a default icon for the account type
     var icon: (name: String, color: Color) {
         switch self {
         case .currentAccount: return ("sterlingsign.circle.fill", .blue)
@@ -53,15 +37,17 @@ enum AccountType: String, Codable, CaseIterable, Identifiable {
         case .generic: return ("questionmark.circle.fill", .gray)
         }
     }
+    
+    var isCredit: Bool {
+        switch self {
+        case .creditCard, .loan, .bnpl, .familyLoan, .collectionAccount:
+            return true
+        case .currentAccount, .savings, .generic:
+            return false
+        }
+    }
 }
 
-
-// MARK: - Main Account Struct
-
-/**
- * The primary data model for a financial account in Firestore.
- * Conforms to Codable for easy Firestore integration and Identifiable for SwiftUI.
- */
 struct Account: Codable, Identifiable {
     @DocumentID var id: String?
     
@@ -70,43 +56,37 @@ struct Account: Codable, Identifiable {
     var type: AccountType
     var institution: String
     var currency: String = "GBP"
-    var currentBalance: Double
     var lastUpdated: Timestamp = Timestamp(date: Date())
     
+    // --- NEW: Anchor Balance System ---
+    // The balance of the account at a specific, fixed point in time.
+    var anchorBalance: Double
+    // The date that the anchorBalance is valid for.
+    var anchorDate: Timestamp
+    
     // --- Optional & Type-Specific Fields ---
-    
-    // General
-    var openingBalance: Double?
-    var openingBalanceDate: Timestamp?
-    var alertThreshold: Double?
-    
-    // For BNPL accounts
     var isBNPL: Bool?
-    var outstandingBalance: Double?
-    var linkedAccountId: String? // Default source for repayments
+    var linkedAccountId: String?
     
-    // For Credit Cards
     var creditLimit: Double?
     var paymentDueDate: Timestamp?
     var apr: Double?
     
-    // For Loans
     var originalAmount: Double?
     var interestRate: Double?
     var originationDate: Timestamp?
     
-    // For Family/Friend Loans
     var counterparty: String?
     
-    // For Collection Accounts
     var originalCreditor: String?
     var settlementAmount: Double?
+    
+    // The 'currentBalance' is no longer a stored property.
+    // It will be calculated in the app.
 
     // --- Computed Properties for UI ---
-    
-    // Provides a consistent icon based on the account's type.
-    // This delegates the call to the icon property on the AccountType enum.
     var icon: (name: String, color: Color) {
         return type.icon
     }
 }
+

@@ -4,9 +4,9 @@
 //
 //  Created by Robert Cobain on 09/06/2025.
 //
-//  REFACTORED: This view has been rebuilt to work with the simplified
-//  Account model and the new AddAccountViewModel. It dynamically shows
-//  fields based on the selected AccountType.
+//  REFACTORED: The UI has been simplified to align with the new
+//  'anchorBalance' architecture. It now asks for a single initial
+//  balance and date.
 //
 
 import SwiftUI
@@ -21,9 +21,8 @@ struct AddAccountView: View {
     var body: some View {
         NavigationView {
             Form {
-                // Section for common details across all account types
                 Section(header: Text("General Information")) {
-                    Picker("Account Type", selection: $viewModel.type) {
+                    Picker("Account Type", selection: $viewModel.type.animation()) {
                         ForEach(AccountType.allCases) { type in
                             Text(type.rawValue).tag(type)
                         }
@@ -32,28 +31,27 @@ struct AddAccountView: View {
                     
                     TextField("Account Name (e.g., Everyday Account)", text: $viewModel.name)
                     
-                    // The label for institution changes for family loans
                     if viewModel.type == .familyLoan {
-                        TextField("Person's Name", text: $viewModel.institution)
+                        TextField("Person's Name (Optional)", text: $viewModel.institution)
                     } else {
-                        TextField("Institution (e.g., HSBC, Klarna)", text: $viewModel.institution)
+                        TextField("Institution (e.g., HSBC, Klarna) (Optional)", text: $viewModel.institution)
                     }
                 }
                 
-                // Section for core financial details
-                Section(header: Text("Balance Details")) {
+                Section(header: Text("Starting Balance")) {
                     HStack {
                         Text("£")
-                        TextField("Current Balance", text: $viewModel.currentBalanceStr)
+                        let balanceLabel = viewModel.type.isCredit ? "Balance as of Date (Amount Owed)" : "Balance as of Date"
+                        TextField(balanceLabel, text: $viewModel.initialBalanceStr)
                             .keyboardType(.decimalPad)
                     }
+                    DatePicker("Date of Balance", selection: $viewModel.dateOfBalance, displayedComponents: .date)
                 }
 
-                // --- Dynamically Shown Fields ---
+                // --- Dynamically Shown Fields for Credit Accounts ---
                 
-                // Fields for Credit Card accounts
                 if viewModel.type == .creditCard {
-                    Section(header: Text("Credit Card Details")) {
+                    Section(header: Text("Credit Card Details (Optional)")) {
                         HStack {
                             Text("£")
                             TextField("Credit Limit", text: $viewModel.creditLimitStr)
@@ -67,9 +65,8 @@ struct AddAccountView: View {
                     }
                 }
                 
-                // Fields for Loan accounts
-                if viewModel.type == .loan {
-                    Section(header: Text("Loan Details")) {
+                if viewModel.type == .loan || viewModel.type == .familyLoan {
+                    Section(header: Text("Loan Details (Optional)")) {
                         HStack {
                             Text("£")
                             TextField("Original Loan Amount", text: $viewModel.originalAmountStr)
@@ -84,52 +81,18 @@ struct AddAccountView: View {
                     }
                 }
                 
-                // Fields for BNPL accounts
-                if viewModel.type == .bnpl {
-                    Section(header: Text("BNPL Details")) {
-                         HStack {
-                            Text("£")
-                            TextField("Outstanding Balance", text: $viewModel.outstandingBalanceStr)
-                                .keyboardType(.decimalPad)
-                        }
-                    }
-                }
-                
-                // Fields for Family/Friend Loan accounts
-                if viewModel.type == .familyLoan {
-                    Section(header: Text("Loan Details")) {
-                        HStack {
-                            Text("£")
-                            TextField("Original Loan Amount", text: $viewModel.originalAmountStr)
-                                .keyboardType(.decimalPad)
-                        }
-                         DatePicker("Date of Loan", selection: $viewModel.originationDate, displayedComponents: .date)
-                    }
-                }
-                
-                // Fields for Collection accounts
                 if viewModel.type == .collectionAccount {
-                     Section(header: Text("Collection Details")) {
-                        TextField("Original Creditor (Optional)", text: $viewModel.originalCreditorStr)
+                     Section(header: Text("Collection Details (Optional)")) {
+                        TextField("Original Creditor", text: $viewModel.originalCreditorStr)
                         HStack {
                            Text("£")
-                           TextField("Settlement Amount (Optional)", text: $viewModel.settlementAmountStr)
+                           TextField("Settlement Amount", text: $viewModel.settlementAmountStr)
                                .keyboardType(.decimalPad)
                        }
                     }
                 }
 
-                // Optional opening balance for any account type
-                 Section(header: Text("Opening Balance (Optional)"), footer: Text("Set an opening balance if you want to import historical transactions later.")) {
-                    HStack {
-                        Text("£")
-                        TextField("Opening Balance", text: $viewModel.openingBalanceStr)
-                            .keyboardType(.decimalPad)
-                    }
-                    DatePicker("Date of Opening Balance", selection: $viewModel.openingBalanceDate, displayedComponents: .date)
-                }
-
-                // Save Button
+                // --- Save Button ---
                 Section {
                     Button(action: {
                         Task { await viewModel.saveAccount() }
@@ -164,6 +127,7 @@ struct AddAccountView: View {
         }
     }
 }
+
 
 struct AddAccountView_Previews: PreviewProvider {
     static var previews: some View {

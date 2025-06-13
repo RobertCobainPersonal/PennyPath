@@ -4,6 +4,9 @@
 //
 //  Created by Robert Cobain on 11/06/2025.
 //
+//  REFACTORED: This ViewModel now works with the calculated balance
+//  passed in from the View, rather than reading a stored property.
+//
 
 import Foundation
 import FirebaseFirestore
@@ -14,11 +17,15 @@ class AccountDetailViewModel: ObservableObject {
     
     @Published var transactions = [Transaction]()
     
+    // The specific account and its calculated balance are now passed in.
     private let account: Account
+    private let balance: Double
+    
     private var listenerRegistration: ListenerRegistration?
     
-    init(account: Account) {
+    init(account: Account, balance: Double) {
         self.account = account
+        self.balance = balance
     }
     
     func fetchTransactions() {
@@ -30,10 +37,8 @@ class AccountDetailViewModel: ObservableObject {
         let db = Firestore.firestore()
         let transactionsPath = "users/\(userId)/transactions"
         
-        // Remove previous listener to prevent duplication if view reappears
         listenerRegistration?.remove()
         
-        // Query for transactions linked to this specific account
         self.listenerRegistration = db.collection(transactionsPath)
             .whereField("accountId", isEqualTo: accountId)
             .order(by: "date", descending: true)
@@ -49,43 +54,41 @@ class AccountDetailViewModel: ObservableObject {
             }
     }
     
-    // Clean up listener
     deinit {
         print("AccountDetailViewModel deinitialized, removing listener.")
         listenerRegistration?.remove()
     }
 }
 
+// MARK: - Computed Properties for UI
 extension AccountDetailViewModel {
     
     var accountName: String {
         account.name
     }
 
+    // This now uses the passed-in balance
     var currentBalanceFormatted: String {
-        String(format: "£%.2f", account.currentBalance)
+        String(format: "£%.2f", balance)
     }
 
     var isCreditAccount: Bool {
-        switch account.type {
-        case .creditCard, .loan: return true
-        default: return false
-        }
+        account.type.isCredit
     }
 
+    // This now uses the passed-in balance
     var creditLimitUsage: Double? {
         guard let limit = account.creditLimit, limit > 0 else { return nil }
-        return (account.currentBalance / limit).clamped(to: 0...1)
+        return (balance / limit).clamped(to: 0...1)
     }
 
     var isBNPLAccount: Bool {
-        account.type == .bnpl || account.isBNPL == true
+        account.type == .bnpl
     }
-
+    
+    // 'alertThreshold' was removed from the model. This logic is no longer valid.
+    // We can re-introduce this feature later if needed.
     var alertThresholdHit: Bool {
-        if let threshold = account.alertThreshold {
-            return account.currentBalance < threshold
-        }
         return false
     }
 
@@ -108,6 +111,7 @@ extension AccountDetailViewModel {
     }
 }
 
+// Helper extension remains the same
 extension Comparable {
     func clamped(to limits: ClosedRange<Self>) -> Self {
         return min(max(self, limits.lowerBound), limits.upperBound)

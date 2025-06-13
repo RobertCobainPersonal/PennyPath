@@ -27,12 +27,11 @@ class BudgetListViewModel: ObservableObject {
     
     @Published var budgetProgressList = [BudgetProgress]()
     
-    private var budgetsListener: ListenerRegistration?
     private var cancellables = Set<AnyCancellable>()
     
     func listenForData(store: AppStore) {
-        // We need to listen to three things: budgets, transactions, and categories.
-        // If any of them change, we need to recalculate our progress.
+        // We listen to changes in budgets, transactions, and categories.
+        // If any of them change, we recalculate our progress.
         Publishers.CombineLatest3(store.$budgets, store.$transactions, store.$categories)
             .debounce(for: .milliseconds(200), scheduler: RunLoop.main) // Avoid rapid recalculation
             .sink { [weak self] (budgets, transactions, categories) in
@@ -45,9 +44,18 @@ class BudgetListViewModel: ObservableObject {
         var newProgressList = [BudgetProgress]()
         
         for budget in budgets {
-            // Filter transactions that fall within the budget's date range and match its category
+            // 1. Find the parent category for this budget.
+            guard let parentCategory = categories.first(where: { $0.id == budget.categoryId }) else { continue }
+            
+            // 2. Create a list of all relevant category IDs: the parent's ID plus all of its children's IDs.
+            let childCategoryIds = categories.filter { $0.parentCategoryId == parentCategory.id }.compactMap { $0.id }
+            let allCategoryIds = [parentCategory.id].compactMap { $0 } + childCategoryIds
+
+            // 3. Filter transactions where the categoryId is in our list of relevant IDs and the date is within the budget period.
             let relevantTransactions = transactions.filter { transaction in
-                guard transaction.categoryId == budget.categoryId else { return false }
+                guard let transactionCategoryId = transaction.categoryId, allCategoryIds.contains(transactionCategoryId) else {
+                    return false
+                }
                 
                 let transactionDate = transaction.date.dateValue()
                 let budgetStartDate = budget.startDate.dateValue()
@@ -56,15 +64,13 @@ class BudgetListViewModel: ObservableObject {
                 return transactionDate >= budgetStartDate && transactionDate <= budgetEndDate
             }
             
-            // Sum the amounts of the relevant transactions (we only care about expenses)
+            // 4. Sum the amounts of the relevant transactions (we only care about expenses)
             let spentAmount = relevantTransactions
-                .filter { $0.amount < 0 } // Only sum expenses, not income
+                .filter { $0.amount < 0 }
                 .reduce(0) { $0 + abs($1.amount) }
             
-            // Find the category object to get its name and icon
-            let category = categories.first { $0.id == budget.categoryId }
-            
-            let progress = BudgetProgress(budget: budget, spentAmount: spentAmount, category: category)
+            // 5. Create the final progress object for the UI
+            let progress = BudgetProgress(budget: budget, spentAmount: spentAmount, category: parentCategory)
             newProgressList.append(progress)
         }
         

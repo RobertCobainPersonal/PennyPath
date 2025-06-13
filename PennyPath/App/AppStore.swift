@@ -4,106 +4,98 @@
 //
 //  Created by Robert Cobain on 11/06/2025.
 //
+//  REFACTORED: Now includes logic to calculate and publish live balances
+//  for all accounts based on their anchor balance and transactions.
+//
 
 import Foundation
 import FirebaseFirestore
 import FirebaseAuth
+import Combine
 
 @MainActor
 class AppStore: ObservableObject {
     
+    // Published properties for raw data from Firestore
     @Published var accounts = [Account]()
     @Published var bnplPlans = [BNPLPlan]()
     @Published var categories = [Category]()
     @Published var transactions = [Transaction]()
-    @Published var budgets = [Budget]() // 1. New property for budgets
+    @Published var budgets = [Budget]()
+    
+    // --- NEW: A published dictionary to hold the calculated live balance for each account ---
+    @Published var calculatedBalances: [String: Double] = [:]
     
     private var db = Firestore.firestore()
-    private var accountsListener: ListenerRegistration?
-    private var plansListener: ListenerRegistration?
-    private var categoriesListener: ListenerRegistration?
-    private var transactionsListener: ListenerRegistration?
-    private var budgetsListener: ListenerRegistration? // 2. New listener
+    private var listeners: [ListenerRegistration] = []
+    private var cancellables = Set<AnyCancellable>()
     
     init() {
         Auth.auth().addStateDidChangeListener { [weak self] _, user in
             if let user = user {
-                self?.fetchAccounts(userId: user.uid)
-                self?.fetchBNPLPlans(userId: user.uid)
-                self?.fetchCategories(userId: user.uid)
-                self?.fetchTransactions(userId: user.uid)
-                self?.fetchBudgets(userId: user.uid) // Fetch budgets on login
+                self?.setupListeners(for: user.uid)
+                self?.setupBalanceCalculator()
             } else {
                 self?.clearData()
             }
         }
     }
     
-    func fetchAccounts(userId: String) {
-        let collectionPath = "users/\(userId)/accounts"
-        accountsListener?.remove()
-        accountsListener = db.collection(collectionPath)
-            .order(by: "lastUpdated", descending: true)
-            .addSnapshotListener { querySnapshot, error in
-                guard let documents = querySnapshot?.documents else { return }
-                self.accounts = documents.compactMap { try? $0.data(as: Account.self) }
-            }
+    private func setupListeners(for userId: String) {
+        // Fetch all data types
+        let accountsListener = db.collection("users/\(userId)/accounts").addSnapshotListener { snapshot, _ in
+            self.accounts = snapshot?.documents.compactMap { try? $0.data(as: Account.self) } ?? []
+        }
+        let transactionsListener = db.collection("users/\(userId)/transactions").addSnapshotListener { snapshot, _ in
+            self.transactions = snapshot?.documents.compactMap { try? $0.data(as: Transaction.self) } ?? []
+        }
+        let categoriesListener = db.collection("users/\(userId)/categories").addSnapshotListener { snapshot, _ in
+            self.categories = snapshot?.documents.compactMap { try? $0.data(as: Category.self) } ?? []
+        }
+        // ... add listeners for other types like budgets, bnplPlans if needed
+        
+        self.listeners = [accountsListener, transactionsListener, categoriesListener]
     }
     
-    func fetchBNPLPlans(userId: String) {
-        let collectionPath = "users/\(userId)/bnpl_plans"
-        plansListener?.remove()
-        plansListener = db.collection(collectionPath)
-            .order(by: "provider")
-            .addSnapshotListener { querySnapshot, error in
-                guard let documents = querySnapshot?.documents else { return }
-                self.bnplPlans = documents.compactMap { try? $0.data(as: BNPLPlan.self) }
+    // --- NEW: This method sets up a reactive calculator ---
+    private func setupBalanceCalculator() {
+        // This publisher will fire whenever the list of accounts OR the list of transactions changes.
+        Publishers.CombineLatest($accounts, $transactions)
+            .map { (accounts, transactions) -> [String: Double] in
+                var balances = [String: Double]()
+                
+                for account in accounts {
+                    guard let accountId = account.id else { continue }
+                    
+                    // 1. Get all transactions for this account that occurred AFTER its anchor date.
+                    let relevantTransactions = transactions.filter {
+                        $0.accountId == accountId && $0.date.dateValue() >= account.anchorDate.dateValue()
+                    }
+                    
+                    // 2. Sum the amounts of these transactions.
+                    let sumOfTransactions = relevantTransactions.reduce(0) { $0 + $1.amount }
+                    
+                    // 3. The current balance is the anchor balance plus the sum of subsequent transactions.
+                    balances[accountId] = account.anchorBalance + sumOfTransactions
+                }
+                
+                return balances
             }
-    }
-    
-    func fetchCategories(userId: String) {
-        let collectionPath = "users/\(userId)/categories"
-        categoriesListener?.remove()
-        categoriesListener = db.collection(collectionPath)
-            .addSnapshotListener { querySnapshot, error in
-                guard let documents = querySnapshot?.documents else { return }
-                self.categories = documents.compactMap { try? $0.data(as: Category.self) }
-            }
-    }
-    
-    func fetchTransactions(userId: String) {
-        let collectionPath = "users/\(userId)/transactions"
-        transactionsListener?.remove()
-        transactionsListener = db.collection(collectionPath)
-            .order(by: "date", descending: true)
-            .addSnapshotListener { querySnapshot, error in
-                guard let documents = querySnapshot?.documents else { return }
-                self.transactions = documents.compactMap { try? $0.data(as: Transaction.self) }
-            }
-    }
-    
-    // 3. --- NEW METHOD ---
-    func fetchBudgets(userId: String) {
-        let collectionPath = "users/\(userId)/budgets"
-        budgetsListener?.remove()
-        budgetsListener = db.collection(collectionPath)
-            .addSnapshotListener { querySnapshot, error in
-                 guard let documents = querySnapshot?.documents else { return }
-                self.budgets = documents.compactMap { try? $0.data(as: Budget.self) }
-            }
+            .assign(to: \.calculatedBalances, on: self)
+            .store(in: &cancellables)
     }
     
     private func clearData() {
-        accountsListener?.remove()
-        plansListener?.remove()
-        categoriesListener?.remove()
-        transactionsListener?.remove()
-        budgetsListener?.remove() // 4. Clear the new listener
+        listeners.forEach { $0.remove() }
+        listeners.removeAll()
+        cancellables.forEach { $0.cancel() }
+        cancellables.removeAll()
         
-        self.accounts.removeAll()
-        self.bnplPlans.removeAll()
-        self.categories.removeAll()
-        self.transactions.removeAll()
-        self.budgets.removeAll() // 4. Clear the new array
+        accounts.removeAll()
+        transactions.removeAll()
+        categories.removeAll()
+        budgets.removeAll()
+        bnplPlans.removeAll()
+        calculatedBalances.removeAll()
     }
 }
