@@ -4,34 +4,34 @@
 //
 //  Created by Robert Cobain on 09/06/2025.
 //
-//  REFACTORED: This view now gets the list of accounts and their calculated
-//  balances from the central AppStore.
+//  REFACTORED: Now supports swipe-to-delete and presents the AddAccountView correctly.
 //
 
 import SwiftUI
 
 struct AccountListView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
-    @EnvironmentObject var store: AppStore // Get the store from the environment
+    @EnvironmentObject var store: AppStore
     
+    @StateObject private var viewModel = AccountListViewModel()
+    
+    // We only need a simple boolean to control the "Add" sheet now
     @State private var showingAddAccountSheet = false
 
     var body: some View {
         NavigationStack {
             Group {
-                // Use the accounts list from the AppStore
-                if !store.accounts.isEmpty {
-                    List(store.accounts) { account in
-                        NavigationLink {
-                            AccountDetailView(account: account)
-                        } label: {
-                            // 1. Look up the calculated balance for this account.
-                            // We provide a default of 0.0 if the balance hasn't been calculated yet.
-                            let balance = store.calculatedBalances[account.id ?? ""] ?? 0.0
-                            
-                            // 2. Pass the account and its calculated balance into the row view.
-                            AccountRowView(account: account, balance: balance)
+                if !viewModel.accounts.isEmpty {
+                    List {
+                        ForEach(viewModel.accounts) { account in
+                            NavigationLink {
+                                AccountDetailView(account: account)
+                            } label: {
+                                let balance = store.calculatedBalances[account.id ?? ""] ?? 0.0
+                                AccountRowView(account: account, balance: balance)
+                            }
                         }
+                        .onDelete(perform: viewModel.delete)
                     }
                 } else {
                     ContentUnavailableView(
@@ -45,23 +45,21 @@ struct AccountListView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
+                        // This now toggles our simple boolean state
                         showingAddAccountSheet.toggle()
                     } label: {
                         Image(systemName: "plus")
                     }
                 }
-                
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Sign Out") {
-                        authViewModel.signOut()
-                    }
-                    .foregroundColor(.red)
-                }
             }
+            // The sheet is now presented using the boolean state
             .sheet(isPresented: $showingAddAccountSheet) {
-                AddAccountView()
+                // We present the AddAccountView with a new, empty ViewModel for adding.
+                AddAccountView(viewModel: AddAccountViewModel())
             }
-            // No .onAppear is needed here anymore, as the AppStore handles fetching.
+            .onAppear {
+                viewModel.listenForData(store: store)
+            }
         }
     }
 }
@@ -69,11 +67,9 @@ struct AccountListView: View {
 
 struct AccountListView_Previews: PreviewProvider {
     static var previews: some View {
-        // Create mocks for the preview
         let mockAuthViewModel = AuthViewModel()
         let mockStore = AppStore()
         
-        // Create a sample account
         let sampleAccount = Account(
             id: "acc123",
             name: "Monzo",
@@ -83,8 +79,6 @@ struct AccountListView_Previews: PreviewProvider {
             anchorDate: .init(date: Date())
         )
         mockStore.accounts = [sampleAccount]
-        
-        // Set its calculated balance
         mockStore.calculatedBalances["acc123"] = 2500.00
         
         return AccountListView()

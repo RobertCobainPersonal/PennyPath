@@ -8,25 +8,55 @@
 import SwiftUI
 
 struct CategoryManagementView: View {
+    
+    // 1. The view now uses the new ViewModel
+    @StateObject private var viewModel = CategoryManagementViewModel()
     @EnvironmentObject var store: AppStore
+    
     @State private var showingAddCategorySheet = false
     
-    // Computed property to get only top-level categories
+    // 2. These computed properties now read from the ViewModel's categories
     private var topLevelCategories: [Category] {
-        store.categories.filter { $0.parentCategoryId == nil }.sorted { $0.name < $1.name }
+        viewModel.categories.filter { $0.parentCategoryId == nil }.sorted { $0.name < $1.name }
     }
     
-    // A helper function to get the children of a specific category
     private func subCategories(for parent: Category) -> [Category] {
-        store.categories.filter { $0.parentCategoryId == parent.id }.sorted { $0.name < $1.name }
+        viewModel.categories.filter { $0.parentCategoryId == parent.id }.sorted { $0.name < $1.name }
     }
     
-    // --- The Main Body is now much simpler ---
     var body: some View {
+        // The main list structure
         List {
             ForEach(topLevelCategories) { category in
-                // Call the helper function to build the section
-                section(for: category)
+                Section(header: Text(category.name)) {
+                    // Row for the parent category
+                    CategoryRowView(category: category)
+                        // Delete action for the parent category
+                        .swipeActions {
+                            Button(role: .destructive) {
+                                if let categoryId = category.id {
+                                    viewModel.deleteCategory(withId: categoryId)
+                                }
+                            } label: {
+                                Label("Delete", systemImage: "trash.fill")
+                            }
+                        }
+                    
+                    // List the sub-categories for this parent
+                    let children = subCategories(for: category)
+                    ForEach(children) { subCategory in
+                        SubCategoryRowView(category: subCategory)
+                            .padding(.leading)
+                    }
+                    // 3. The .onDelete modifier for sub-categories
+                    .onDelete { offsets in
+                        // This gets the IDs of the sub-categories to delete
+                        let idsToDelete = offsets.compactMap { children[$0].id }
+                        for id in idsToDelete {
+                            viewModel.deleteCategory(withId: id)
+                        }
+                    }
+                }
             }
         }
         .navigationTitle("Categories")
@@ -42,36 +72,9 @@ struct CategoryManagementView: View {
         .sheet(isPresented: $showingAddCategorySheet) {
             AddCategoryView()
         }
-    }
-    
-    // --- NEW: Helper function to build the complex section view ---
-    private func section(for category: Category) -> some View {
-        Section(header: Text(category.name)) {
-            CategoryRowView(category: category)
-            
-            // List the sub-categories for this parent
-            ForEach(subCategories(for: category)) { subCategory in
-                SubCategoryRowView(category: subCategory)
-                    .padding(.leading)
-            }
-        }
-    }
-}
-
-
-// A slightly different row view for sub-categories to show indentation
-struct SubCategoryRowView: View {
-    let category: Category
-    
-    var body: some View {
-        HStack {
-            Image(systemName: "arrow.turn.down.right")
-                .foregroundColor(.secondary)
-            
-            Image(systemName: category.iconName)
-                .foregroundColor(category.color)
-
-            Text(category.name)
+        // 4. Connect the ViewModel to the AppStore when the view appears
+        .onAppear {
+            viewModel.listenForData(store: store)
         }
     }
 }

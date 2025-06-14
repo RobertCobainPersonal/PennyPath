@@ -31,3 +31,19 @@ struct CategoryRowView: View {
         }
     }
 }
+
+struct SubCategoryRowView: View {
+    let category: Category
+    
+    var body: some View {
+        HStack {
+            Image(systemName: "arrow.turn.down.right")
+                .foregroundColor(.secondary)
+            
+            Image(systemName: category.iconName)
+                .foregroundColor(category.color)
+
+            Text(category.name)
+        }
+    }
+}

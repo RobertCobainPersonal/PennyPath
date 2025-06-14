@@ -58,4 +58,21 @@ class TransactionListViewModel: ObservableObject {
         print("TransactionListViewModel deinitialized, removing listener.")
         listenerRegistration?.remove()
     }
+    
+    func deleteTransaction(at offsets: IndexSet) {
+           let transactionsToDelete = offsets.compactMap { self.transactions[$0] }
+           
+           Task {
+               for transaction in transactionsToDelete {
+                   guard let transactionId = transaction.id else { continue }
+                   
+                   do {
+                       try await TransactionService.shared.deleteTransaction(withId: transactionId)
+                       print("Successfully deleted transaction \(transactionId).")
+                   } catch {
+                       print("Error deleting transaction: \(error.localizedDescription)")
+                   }
+               }
+           }
+       }
 }

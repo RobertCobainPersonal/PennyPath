@@ -7,6 +7,8 @@
 //  REFACTORED: The UI has been simplified to align with the new
 //  'anchorBalance' architecture. It now asks for a single initial
 //  balance and date.
+//  REFACTORED AGAIN: The View now accepts a ViewModel, allowing it to be
+//  used for both adding and editing an account.
 //
 
 import SwiftUI
@@ -14,9 +16,16 @@ import FirebaseFirestore
 
 struct AddAccountView: View {
     
-    @StateObject private var viewModel = AddAccountViewModel()
+    // The ViewModel is now passed into the view.
+    @StateObject private var viewModel: AddAccountViewModel
+    
     @Environment(\.dismiss) private var dismiss
     @State private var showingAlert = false
+    
+    // The initializer now requires a ViewModel.
+    init(viewModel: AddAccountViewModel) {
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
 
     var body: some View {
         NavigationView {
@@ -29,7 +38,7 @@ struct AddAccountView: View {
                     }
                     .pickerStyle(.menu)
                     
-                    TextField("Account Name (e.g., Everyday Account)", text: $viewModel.name)
+                    TextField("Account Nickname (e.g., Main Account)", text: $viewModel.name)
                     
                     if viewModel.type == .familyLoan {
                         TextField("Person's Name (Optional)", text: $viewModel.institution)
@@ -92,16 +101,17 @@ struct AddAccountView: View {
                     }
                 }
 
-                // --- Save Button ---
+                // --- Save/Update Button ---
                 Section {
                     Button(action: {
-                        Task { await viewModel.saveAccount() }
+                        Task { await viewModel.saveOrUpdateAccount() }
                     }) {
                         HStack {
                             if viewModel.isLoading {
                                 ProgressView()
                             } else {
-                                Text("Save Account")
+                                // Text now comes from the ViewModel
+                                Text(viewModel.saveButtonText)
                             }
                         }
                         .frame(maxWidth: .infinity)
@@ -109,14 +119,15 @@ struct AddAccountView: View {
                     .disabled(!viewModel.isFormValid || viewModel.isLoading)
                 }
             }
-            .navigationTitle("Add New Account")
+            // Title now comes from the ViewModel
+            .navigationTitle(viewModel.navigationTitle)
             .navigationBarItems(leading: Button("Cancel") { dismiss() })
             .onChange(of: viewModel.alertMessage) { message in
                 if message != nil { showingAlert = true }
             }
-            .alert("Add Account", isPresented: $showingAlert, actions: {
+            .alert(viewModel.navigationTitle, isPresented: $showingAlert, actions: {
                 Button("OK") {
-                    if viewModel.alertMessage == "Account saved successfully!" {
+                    if viewModel.alertMessage?.contains("successfully") == true {
                         dismiss()
                     }
                     viewModel.alertMessage = nil
@@ -131,6 +142,11 @@ struct AddAccountView: View {
 
 struct AddAccountView_Previews: PreviewProvider {
     static var previews: some View {
-        AddAccountView()
+        // Preview for adding a new account
+        AddAccountView(viewModel: AddAccountViewModel())
+        
+        // Preview for editing an existing account
+        let mockAccount = Account(id: "123", name: "Monzo", type: .currentAccount, institution: "Monzo", anchorBalance: 1500, anchorDate: Timestamp(date: Date()))
+        AddAccountView(viewModel: AddAccountViewModel(accountToEdit: mockAccount))
     }
 }

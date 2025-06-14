@@ -19,36 +19,84 @@ class AddExpenseViewModel: ObservableObject {
     @Published var isBNPL: Bool = false
     @Published var selectedPlanId: String = ""
     @Published var selectedFundingAccountId: String = ""
+    
+    // --- Properties to handle editing ---
+    private var transactionToEdit: Transaction?
+    var navigationTitle: String {
+        transactionToEdit == nil ? "New Expense" : "Edit Expense"
+    }
+    var saveButtonText: String {
+        transactionToEdit == nil ? "Save Expense" : "Update Expense"
+    }
+    var isEditing: Bool {
+        transactionToEdit != nil
+    }
 
     var isFormValid: Bool {
         !(amountStr.isEmpty || selectedAccountId.isEmpty) &&
         (isBNPL ? !(selectedPlanId.isEmpty || selectedFundingAccountId.isEmpty) : true)
     }
+    
+    // --- Initializers ---
+    
+    // Default initializer for adding a new expense
+    init() {
+        self.transactionToEdit = nil
+    }
+    
+    // Initializer for editing an existing expense
+    init(transactionToEdit: Transaction) {
+        self.transactionToEdit = transactionToEdit
+        
+        // Pre-populate fields
+        // Note: Expense amounts are negative, so we use abs() for the text field
+        self.amountStr = String(abs(transactionToEdit.amount))
+        self.selectedAccountId = transactionToEdit.accountId
+        self.date = transactionToEdit.date.dateValue()
+        self.categoryId = transactionToEdit.categoryId
+        self.description = transactionToEdit.description
+        self.isBNPL = transactionToEdit.isBNPL
+        
+        if transactionToEdit.isBNPL {
+            self.selectedPlanId = transactionToEdit.bnplPlanId ?? ""
+            self.selectedFundingAccountId = transactionToEdit.linkedAccountId ?? ""
+        }
+    }
 
-    func save(plan: BNPLPlan?, schedule: BNPLSchedulePreview?) async throws {
-            guard let userId = Auth.auth().currentUser?.uid, let amount = Double(amountStr) else {
-                throw NSError(domain: "AddExpenseViewModel", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid data."])
-            }
-
-            // We no longer need to pass the category name here, as the ID is part of the transaction
+    func saveOrUpdate(plan: BNPLPlan?, schedule: BNPLSchedulePreview?) async throws {
+        guard let userId = Auth.auth().currentUser?.uid, let amount = Double(amountStr) else {
+            throw NSError(domain: "AddExpenseViewModel", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid data."])
+        }
+        
+        if var transaction = transactionToEdit {
+            // --- UPDATE LOGIC ---
+            transaction.amount = -abs(amount) // Ensure amount is negative
+            transaction.accountId = selectedAccountId
+            transaction.date = Timestamp(date: date)
+            transaction.description = description
+            transaction.categoryId = self.categoryId
+            // Note: Editing BNPL status is not supported in this version
+            
+            try await TransactionService.shared.updateTransaction(transaction)
+            
+        } else {
+            // --- SAVE NEW LOGIC ---
             let details = TransactionDetails(
                 amount: amount,
                 accountId: selectedAccountId,
                 date: date,
                 description: description,
-                // Pass the categoryId to be saved with the transaction
-                categoryId: self.categoryId ?? "", // Passing ID to a field that expects a name. Let's fix TransactionDetails
+                categoryId: self.categoryId,
                 isBNPL: isBNPL,
                 bnplPlan: plan,
                 bnplFundingAccountId: selectedFundingAccountId,
                 bnplSchedule: schedule
             )
-
             try await TransactionService.shared.addTransaction(details: details, for: userId)
         }
+    }
     
-    // --- NEW METHOD TO CALCULATE THE BNPL SCHEDULE ---
-    
+    // --- BNPL Calculation Logic (remains the same) ---
     func calculateSchedulePreview(for plan: BNPLPlan) -> BNPLSchedulePreview? {
         guard let amount = Double(amountStr), amount > 0 else { return nil }
 
@@ -60,14 +108,12 @@ class AddExpenseViewModel: ObservableObject {
         
         let remainingBalance = totalDebt - initialPayment
         
-        // Ensure we don't divide by zero if installments is 0
         guard plan.installments > 0 else { return nil }
         let installmentAmount = remainingBalance / Double(plan.installments)
         
         var paymentDates = [Date]()
         var currentDate = date
         
-        // The schedule starts from the first payment *after* the initial one.
         for _ in 0..<plan.installments {
             currentDate = calculateNextDueDate(from: currentDate, frequency: plan.paymentFrequency)
             paymentDates.append(currentDate)

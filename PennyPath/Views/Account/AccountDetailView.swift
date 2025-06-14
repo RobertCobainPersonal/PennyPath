@@ -4,39 +4,31 @@
 //
 //  Created by Robert Cobain on 11/06/2025.
 //
-//  REFACTORED: This view now gets the calculated balance from the AppStore
-//  and passes it into its ViewModel.
+//  REFACTORED: Now includes an "Edit" button to present the AddAccountView sheet.
 //
 
 import SwiftUI
 
 struct AccountDetailView: View {
     
-    // We get the store from the environment to look up the balance.
     @EnvironmentObject var store: AppStore
     
-    // The account to display is passed in.
-    private let account: Account
+    // 1. A new state variable to control the presentation of our edit sheet
+    @State private var isPresentingEditSheet = false
     
-    // The ViewModel is now created inside the initializer.
+    private let account: Account
     @StateObject private var viewModel: AccountDetailViewModel
     
     init(account: Account) {
         self.account = account
-        // We temporarily initialize the ViewModel with a balance of 0.
-        // The correct balance will be looked up from the store when the view appears.
-        // This approach is necessary because we cannot access the environment store during initialization.
         _viewModel = StateObject(wrappedValue: AccountDetailViewModel(account: account, balance: 0.0))
     }
     
-    // A helper to find the correct, live balance for this account from the AppStore.
     private var liveBalance: Double {
         store.calculatedBalances[account.id ?? ""] ?? account.anchorBalance
     }
     
     var body: some View {
-        // We create a new instance of the ViewModel with the live balance
-        // and assign it to our state object. This ensures the view has the correct data.
         let liveViewModel = AccountDetailViewModel(account: account, balance: liveBalance)
         
         List {
@@ -51,7 +43,6 @@ struct AccountDetailView: View {
                 HStack {
                     Text("Current Balance")
                     Spacer()
-                    // Use the ViewModel's formatted property
                     Text(liveViewModel.currentBalanceFormatted)
                         .fontWeight(.bold)
                         .foregroundColor(liveViewModel.alertThresholdHit ? .red : .primary)
@@ -72,8 +63,6 @@ struct AccountDetailView: View {
                     }
                 }
                 
-                // All other rows displaying account info...
-                // These can stay the same as they read directly from the 'account' object.
                 if let apr = account.apr {
                     HStack {
                         Text("APR")
@@ -83,7 +72,6 @@ struct AccountDetailView: View {
                 }
             }
             
-            // The section for transactions remains the same
             Section(header: Text("Recent Transactions")) {
                 if liveViewModel.transactions.isEmpty {
                     Text("No transactions found for this account.")
@@ -97,9 +85,19 @@ struct AccountDetailView: View {
             }
         }
         .navigationTitle(account.name)
+        .toolbar {
+            // 2. A new ToolbarItem with a button to trigger the sheet
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Edit") {
+                    isPresentingEditSheet.toggle()
+                }
+            }
+        }
+        // 3. The sheet modifier that presents our AddAccountView in edit mode
+        .sheet(isPresented: $isPresentingEditSheet) {
+            AddAccountView(viewModel: AddAccountViewModel(accountToEdit: account))
+        }
         .onAppear {
-            // When the view appears, we tell the ViewModel to fetch its transactions.
-            // The ViewModel itself is updated with the live balance at the start of the body.
             liveViewModel.fetchTransactions()
         }
     }

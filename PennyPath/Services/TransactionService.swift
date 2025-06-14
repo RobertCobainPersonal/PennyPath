@@ -151,4 +151,49 @@ class TransactionService {
         
         try await batch.commit()
     }
+    
+    /// Deletes a transaction and any associated scheduled payments.
+        /// - Parameter transactionId: The ID of the transaction to delete.
+        /// - Throws: An error if the user is not authenticated or the batch delete fails.
+        func deleteTransaction(withId transactionId: String) async throws {
+            guard let userId = Auth.auth().currentUser?.uid else {
+                throw NSError(domain: "TransactionService", code: 2, userInfo: [NSLocalizedDescriptionKey: "User not authenticated."])
+            }
+            
+            let batch = db.batch()
+            let transactionRef = db.collection("users/\(userId)/transactions").document(transactionId)
+            
+            // Get the transaction document to check for scheduled payments
+            let transactionDoc = try await transactionRef.getDocument()
+            let transaction = try transactionDoc.data(as: Transaction.self)
+            
+            // If it's a BNPL transaction with scheduled payments, delete them too
+            if let scheduledPaymentIds = transaction.scheduledPaymentIds, !scheduledPaymentIds.isEmpty {
+                for paymentId in scheduledPaymentIds {
+                    let paymentRef = db.collection("users/\(userId)/scheduled_payments").document(paymentId)
+                    batch.deleteDocument(paymentRef)
+                }
+            }
+            
+            // Delete the main transaction document
+            batch.deleteDocument(transactionRef)
+            
+            // Commit the batch
+            try await batch.commit()
+        }
+    
+    func updateTransaction(_ transaction: Transaction) async throws {
+        guard let transactionId = transaction.id else {
+            throw NSError(domain: "TransactionService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Transaction ID not found for update."])
+        }
+        
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "TransactionService", code: 2, userInfo: [NSLocalizedDescriptionKey: "User not authenticated."])
+        }
+        
+        let docRef = db.collection("users/\(userId)/transactions").document(transactionId)
+        
+        // Use setData to overwrite the document with the updated version.
+        try await docRef.setData(from: transaction)
+    }
 }
