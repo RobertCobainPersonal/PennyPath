@@ -11,7 +11,7 @@ struct ContentView: View {
     @EnvironmentObject var appStore: AppStore
     
     var body: some View {
-        DashboardView(appStore: appStore)
+        MainTabView()
     }
 }
 

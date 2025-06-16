@@ -5,7 +5,6 @@
 //  Created by Robert Cobain on 16/06/2025.
 //
 
-
 import SwiftUI
 
 struct DashboardView: View {
@@ -31,9 +30,6 @@ struct DashboardView: View {
                     
                     // Budget progress section
                     budgetProgressSection
-                    
-                    // Quick actions section
-                    quickActionsSection
                 }
                 .padding(.horizontal)
                 .padding(.bottom, 20)
@@ -140,40 +136,6 @@ struct DashboardView: View {
         }
     }
     
-    private var quickActionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Quick Actions", icon: "bolt")
-            
-            CardView {
-                HStack(spacing: 20) {
-                    quickActionButton(
-                        title: "Add Expense",
-                        icon: "minus.circle.fill",
-                        color: .red
-                    ) {
-                        // TODO: Add expense action
-                    }
-                    
-                    quickActionButton(
-                        title: "Add Income",
-                        icon: "plus.circle.fill",
-                        color: .green
-                    ) {
-                        // TODO: Add income action
-                    }
-                    
-                    quickActionButton(
-                        title: "View Accounts",
-                        icon: "building.columns.fill",
-                        color: .blue
-                    ) {
-                        // TODO: View accounts action
-                    }
-                }
-            }
-        }
-    }
-    
     // MARK: - Helper Views
     
     private func sectionHeader(title: String, icon: String) -> some View {
@@ -209,25 +171,6 @@ struct DashboardView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 20)
         }
-    }
-    
-    private func quickActionButton(title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundColor(color)
-                
-                Text(title)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-        }
-        .buttonStyle(.plain)
     }
     
     // MARK: - Computed Properties

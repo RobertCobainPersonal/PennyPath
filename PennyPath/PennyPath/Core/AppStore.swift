@@ -5,6 +5,7 @@
 //  Created by Robert Cobain on 16/06/2025.
 //
 
+
 import Foundation
 import Combine
 import SwiftUI
@@ -47,6 +48,101 @@ class AppStore: ObservableObject {
             .reduce(0) { $0 + abs($1.amount) }
     }
     
+    // MARK: - Account Management Methods
+    
+    /// Delete an account and all associated data
+    /// This is a cascade delete that removes all related transactions, transfers, etc.
+    /// CRITICAL: Also removes transfer transactions from other accounts to prevent orphaning
+    func deleteAccount(_ account: Account) {
+        // IMPORTANT: Order matters for data integrity
+        
+        // 1. Find all transfers involving this account (before deletion)
+        let relatedTransfers = transfers.filter { $0.fromAccountId == account.id || $0.toAccountId == account.id }
+        
+        // 2. Delete transfer-related transactions from ALL accounts (not just the one being deleted)
+        // This prevents orphaned transactions in other accounts
+        for transfer in relatedTransfers {
+            // Remove the corresponding transactions in both accounts using robust matching
+            transactions.removeAll { transaction in
+                // Match by account, amount, and date (within same day) for transfer transactions
+                let sameDate = Calendar.current.isDate(transaction.date, inSameDayAs: transfer.date)
+                
+                // Check if this is the "from" side of the transfer
+                let isFromTransaction = (transaction.accountId == transfer.fromAccountId &&
+                                       transaction.amount == -transfer.amount &&
+                                       sameDate &&
+                                       (transaction.description.lowercased().contains("transfer") ||
+                                        transaction.categoryId == nil))
+                
+                // Check if this is the "to" side of the transfer
+                let isToTransaction = (transaction.accountId == transfer.toAccountId &&
+                                     transaction.amount == transfer.amount &&
+                                     sameDate &&
+                                     (transaction.description.lowercased().contains("transfer") ||
+                                      transaction.description.lowercased().contains("top up") ||
+                                      transaction.categoryId == nil))
+                
+                return isFromTransaction || isToTransaction
+            }
+        }
+        
+        // 3. Remove all transfers involving this account
+        transfers.removeAll { $0.fromAccountId == account.id || $0.toAccountId == account.id }
+        
+        // 4. Remove all remaining transactions for this account (non-transfer transactions)
+        transactions.removeAll { $0.accountId == account.id }
+        
+        // 5. Remove all BNPL plans for this account
+        bnplPlans.removeAll { $0.accountId == account.id }
+        
+        // 6. Remove all flexible arrangements for this account
+        flexibleArrangements.removeAll { $0.accountId == account.id }
+        
+        // 7. Finally, remove the account itself
+        accounts.removeAll { $0.id == account.id }
+        
+        // TODO: When Firebase is implemented, this should be a batch operation
+    }
+    
+    /// Update an existing account
+    func updateAccount(_ account: Account) {
+        if let index = accounts.firstIndex(where: { $0.id == account.id }) {
+            accounts[index] = account
+        }
+        // TODO: When Firebase is implemented, update the document
+    }
+    
+    /// Get deletion impact for an account (for warning dialog)
+    /// Shows what data will be deleted and which other accounts will be affected
+    func getDeletionImpact(for account: Account) -> AccountDeletionImpact {
+        let relatedTransactions = transactions.filter { $0.accountId == account.id }
+        let relatedTransfers = transfers.filter { $0.fromAccountId == account.id || $0.toAccountId == account.id }
+        let relatedBNPLPlans = bnplPlans.filter { $0.accountId == account.id }
+        let relatedFlexibleArrangements = flexibleArrangements.filter { $0.accountId == account.id }
+        
+        // Find other accounts affected by transfers
+        var affectedAccountIds: Set<String> = []
+        for transfer in relatedTransfers {
+            if transfer.fromAccountId == account.id {
+                affectedAccountIds.insert(transfer.toAccountId)
+            } else {
+                affectedAccountIds.insert(transfer.fromAccountId)
+            }
+        }
+        
+        let affectedAccounts = accounts.filter { affectedAccountIds.contains($0.id) }
+        
+        return AccountDeletionImpact(
+            account: account,
+            transactionCount: relatedTransactions.count,
+            transferCount: relatedTransfers.count,
+            bnplPlanCount: relatedBNPLPlans.count,
+            flexibleArrangementCount: relatedFlexibleArrangements.count,
+            affectedAccounts: affectedAccounts,
+            totalImpactedItems: relatedTransactions.count + relatedTransfers.count + relatedBNPLPlans.count + relatedFlexibleArrangements.count
+        )
+    }
+    
     // MARK: - Initialization
     init() {
         setupMockData()
@@ -72,15 +168,15 @@ class AppStore: ObservableObject {
         
         categories = [foodCategory, transportCategory, entertainmentCategory, utilitiesCategory, shoppingCategory, salaryCategory]
         
-        // Mock Accounts - UK banks including BNPL, flexible arrangements, and prepaid
+        // Mock Accounts - UK banks including BNPL, flexible arrangements, and prepaid with enhanced data
         let currentAccount = Account(id: "acc-current", userId: "mock-user-id", name: "Barclays Current Account", type: .current, balance: 2850.75)
         let savingsAccount = Account(id: "acc-savings", userId: "mock-user-id", name: "HSBC Instant Saver", type: .savings, balance: 8420.00)
-        let creditAccount = Account(id: "acc-credit", userId: "mock-user-id", name: "Santander Cashback Credit Card", type: .credit, balance: -892.45)
-        let loanAccount = Account(id: "acc-loan", userId: "mock-user-id", name: "Lloyds Car Finance", type: .loan, balance: -12750.00)
-        let klarnaAccount = Account(id: "acc-klarna", userId: "mock-user-id", name: "Klarna", type: .bnpl, balance: -124.97)
-        let clearpayAccount = Account(id: "acc-clearpay", userId: "mock-user-id", name: "Clearpay", type: .bnpl, balance: -79.98)
-        let familyAccount = Account(id: "acc-family", userId: "mock-user-id", name: "Loan from Parents", type: .familyFriend, balance: -5000.00)
-        let debtCollectionAccount = Account(id: "acc-debt", userId: "mock-user-id", name: "Lowell Debt Collection", type: .debtCollection, balance: -847.32)
+        let creditAccount = Account(id: "acc-credit", userId: "mock-user-id", name: "Santander Cashback Credit Card", type: .credit, balance: -892.45, creditLimit: 3000.00)
+        let loanAccount = Account(id: "acc-loan", userId: "mock-user-id", name: "Lloyds Car Finance", type: .loan, balance: -12750.00, originalLoanAmount: 18000.00, loanTermMonths: 48, loanStartDate: Calendar.current.date(byAdding: .month, value: -18, to: Date()), interestRate: 5.9, monthlyPayment: 425.50)
+        let klarnaAccount = Account(id: "acc-klarna", userId: "mock-user-id", name: "Klarna", type: .bnpl, balance: -124.97, bnplProvider: "Klarna")
+        let clearpayAccount = Account(id: "acc-clearpay", userId: "mock-user-id", name: "Clearpay", type: .bnpl, balance: -79.98, bnplProvider: "Clearpay")
+        let familyAccount = Account(id: "acc-family", userId: "mock-user-id", name: "Loan from Parents", type: .familyFriend, balance: -5000.00, originalLoanAmount: 8000.00, loanStartDate: Calendar.current.date(byAdding: .month, value: -6, to: Date()))
+        let debtCollectionAccount = Account(id: "acc-debt", userId: "mock-user-id", name: "Lowell Debt Collection", type: .debtCollection, balance: -847.32, originalLoanAmount: 1200.00)
         let golfClubAccount = Account(id: "acc-golf", userId: "mock-user-id", name: "Golf Club Bar Card", type: .prepaid, balance: 47.50)
         
         accounts = [currentAccount, savingsAccount, creditAccount, loanAccount, klarnaAccount, clearpayAccount, familyAccount, debtCollectionAccount, golfClubAccount]
@@ -359,5 +455,72 @@ class AppStore: ObservableObject {
             Budget(id: "budget-transport", userId: "mock-user-id", categoryId: "cat-transport", amount: 200.00),
             Budget(id: "budget-entertainment", userId: "mock-user-id", categoryId: "cat-entertainment", amount: 150.00)
         ]
+    }
+}
+
+// MARK: - Helper Models for Account Management
+
+/// Impact analysis for account deletion with enhanced cross-account warnings
+struct AccountDeletionImpact {
+    let account: Account
+    let transactionCount: Int
+    let transferCount: Int
+    let bnplPlanCount: Int
+    let flexibleArrangementCount: Int
+    let affectedAccounts: [Account]
+    let totalImpactedItems: Int
+    
+    var hasImpact: Bool {
+        totalImpactedItems > 0 || !affectedAccounts.isEmpty
+    }
+    
+    var impactDescription: String {
+        var items: [String] = []
+        
+        if transactionCount > 0 {
+            items.append("\(transactionCount) transaction\(transactionCount == 1 ? "" : "s")")
+        }
+        if transferCount > 0 {
+            items.append("\(transferCount) transfer\(transferCount == 1 ? "" : "s")")
+        }
+        if bnplPlanCount > 0 {
+            items.append("\(bnplPlanCount) BNPL plan\(bnplPlanCount == 1 ? "" : "s")")
+        }
+        if flexibleArrangementCount > 0 {
+            items.append("\(flexibleArrangementCount) payment arrangement\(flexibleArrangementCount == 1 ? "" : "s")")
+        }
+        
+        var result = ""
+        
+        // Describe what will be deleted
+        if items.isEmpty {
+            result = "No transaction data will be deleted."
+        } else if items.count == 1 {
+            result = items[0] + " will be permanently deleted."
+        } else if items.count == 2 {
+            result = items.joined(separator: " and ") + " will be permanently deleted."
+        } else {
+            let lastItem = items.removeLast()
+            result = items.joined(separator: ", ") + ", and " + lastItem + " will be permanently deleted."
+        }
+        
+        // Add affected accounts warning
+        if !affectedAccounts.isEmpty {
+            let accountNames = affectedAccounts.map { $0.name }
+            let affectedText: String
+            
+            if accountNames.count == 1 {
+                affectedText = "\n\nThis will also affect 1 other account: \(accountNames[0]). Transfer transactions in this account will be removed."
+            } else if accountNames.count == 2 {
+                affectedText = "\n\nThis will also affect 2 other accounts: \(accountNames.joined(separator: " and ")). Transfer transactions in these accounts will be removed."
+            } else {
+                let lastAccount = accountNames.dropLast().joined(separator: ", ")
+                affectedText = "\n\nThis will also affect \(accountNames.count) other accounts: \(lastAccount), and \(accountNames.last!). Transfer transactions in these accounts will be removed."
+            }
+            
+            result += affectedText
+        }
+        
+        return result
     }
 }
