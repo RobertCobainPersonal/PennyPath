@@ -15,6 +15,7 @@ struct Transaction: Identifiable, Codable {
     let accountId: String
     let categoryId: String?
     let bnplPlanId: String? // Link to BNPL plan for installment payments
+    let eventId: String? // Link to Event for grouping transactions
     let amount: Double // Positive for income, negative for expenses
     let description: String
     var date: Date
@@ -24,7 +25,7 @@ struct Transaction: Identifiable, Codable {
     let createdAt: Date
     
     init(id: String = UUID().uuidString, userId: String, accountId: String,
-         categoryId: String? = nil, bnplPlanId: String? = nil,
+         categoryId: String? = nil, bnplPlanId: String? = nil, eventId: String? = nil,
          amount: Double, description: String, date: Date = Date(),
          isScheduled: Bool = false, recurrence: RecurrenceType? = nil) {
         self.id = id
@@ -32,6 +33,7 @@ struct Transaction: Identifiable, Codable {
         self.accountId = accountId
         self.categoryId = categoryId
         self.bnplPlanId = bnplPlanId
+        self.eventId = eventId
         self.amount = amount
         self.description = description
         self.date = date
@@ -62,6 +64,7 @@ struct Transaction: Identifiable, Codable {
         self.accountId = accountId
         self.categoryId = data["categoryId"] as? String
         self.bnplPlanId = data["bnplPlanId"] as? String
+        self.eventId = data["eventId"] as? String
         self.amount = amount
         self.description = description
         self.date = date
@@ -90,6 +93,10 @@ struct Transaction: Identifiable, Codable {
         
         if let bnplPlanId = bnplPlanId {
             data["bnplPlanId"] = bnplPlanId
+        }
+        
+        if let eventId = eventId {
+            data["eventId"] = eventId
         }
         
         if let recurrence = recurrence {

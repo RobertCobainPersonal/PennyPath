@@ -18,8 +18,13 @@ struct PennyPathApp: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(appStore)
+            if appStore.isAuthenticated {
+                ContentView()
+                    .environmentObject(appStore)
+            } else {
+                AuthenticationView()
+                    .environmentObject(appStore)
+            }
         }
     }
 }

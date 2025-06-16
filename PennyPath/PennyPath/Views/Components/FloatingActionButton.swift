@@ -99,13 +99,13 @@ struct FloatingActionButton: View {
                         .scaleEffect(isExpanded ? 1.1 : 1.0)
                     }
                     .padding(.trailing, 20)
-                    .padding(.bottom, 120) // Increased padding to clear tab bar and content
+                    .padding(.bottom, 120)
                 }
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isExpanded)
         .sheet(isPresented: $showingAddTransaction) {
-            AddTransactionPlaceholderView()
+            AddTransactionView()
         }
         .sheet(isPresented: $showingAddAccount) {
             AddAccountPlaceholderView()
@@ -149,42 +149,6 @@ struct FloatingActionButton: View {
 }
 
 // MARK: - Placeholder Views for Sheets
-
-struct AddTransactionPlaceholderView: View {
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                Image(systemName: "dollarsign.circle")
-                    .font(.system(size: 60))
-                    .foregroundColor(.blue)
-                
-                Text("Add Transaction")
-                    .font(.title)
-                    .fontWeight(.bold)
-                
-                Text("This will be the transaction creation form")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                
-                Spacer()
-            }
-            .padding()
-            .navigationTitle("Add Transaction")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationBarBackButtonHidden(true)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-}
 
 struct AddAccountPlaceholderView: View {
     @Environment(\.dismiss) private var dismiss

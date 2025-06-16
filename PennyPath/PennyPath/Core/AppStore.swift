@@ -5,11 +5,11 @@
 //  Created by Robert Cobain on 16/06/2025.
 //
 
-
 import Foundation
 import Combine
 import SwiftUI
 import FirebaseFirestore
+import FirebaseAuth
 
 /// Central state manager for PennyPath app
 /// Acts as single source of truth for all app data
@@ -24,6 +24,14 @@ class AppStore: ObservableObject {
     @Published var bnplPlans: [BNPLPlan] = []
     @Published var flexibleArrangements: [FlexibleArrangement] = []
     @Published var transfers: [Transfer] = []
+    @Published var events: [Event] = []
+    
+    // MARK: - Authentication Properties
+    @Published var isAuthenticated = false
+    @Published var currentUser: User?
+    
+    // MARK: - Firebase Services
+    private let db = Firestore.firestore()
     
     // MARK: - Computed Properties
     
@@ -46,6 +54,115 @@ class AppStore: ObservableObject {
         return transactions
             .filter { !$0.isScheduled && $0.amount < 0 && $0.date >= startOfMonth }
             .reduce(0) { $0 + abs($1.amount) }
+    }
+    
+    // MARK: - Authentication Methods
+    
+    func signUp(email: String, password: String, firstName: String) async throws {
+        let result = try await Auth.auth().createUser(withEmail: email, password: password)
+        
+        // Create user profile in Firestore
+        let newUser = User(id: result.user.uid, firstName: firstName, email: email)
+        try await createUserProfile(newUser)
+        
+        await MainActor.run {
+            self.currentUser = newUser
+            self.user = newUser
+            self.isAuthenticated = true
+        }
+        
+        // Load user's data after authentication
+        await loadUserData()
+    }
+    
+    func signIn(email: String, password: String) async throws {
+        let result = try await Auth.auth().signIn(withEmail: email, password: password)
+        
+        // Load user profile from Firestore
+        let userProfile = try await loadUserProfile(userId: result.user.uid)
+        
+        await MainActor.run {
+            self.currentUser = userProfile
+            self.user = userProfile
+            self.isAuthenticated = true
+        }
+        
+        // Load user's data after authentication
+        await loadUserData()
+    }
+    
+    func signOut() throws {
+        try Auth.auth().signOut()
+        currentUser = nil
+        user = nil
+        isAuthenticated = false
+        // Clear all data
+        accounts = []
+        transactions = []
+        categories = []
+        budgets = []
+        bnplPlans = []
+        flexibleArrangements = []
+        transfers = []
+        events = []
+    }
+    
+    // MARK: - Firestore Methods
+    
+    private func createUserProfile(_ user: User) async throws {
+        try await db.collection("users").document(user.id).setData(user.toFirestoreData())
+    }
+    
+    private func loadUserProfile(userId: String) async throws -> User {
+        let document = try await db.collection("users").document(userId).getDocument()
+        guard let user = User(from: document) else {
+            throw NSError(domain: "AppStore", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to load user profile"])
+        }
+        return user
+    }
+    
+    private func loadUserData() async {
+        guard let currentUser = currentUser else { return }
+        
+        // For now, load mock data
+        // TODO: Replace with actual Firestore loading
+        await MainActor.run {
+            loadMockData(for: currentUser.id)
+        }
+    }
+    
+    // MARK: - Rules Testing Method
+    
+    func testFirestoreRules() async {
+        print("🧪 Testing Firestore rules from iOS app...")
+        
+        // Test 1: Try to access data without authentication
+        if currentUser == nil {
+            do {
+                let _ = try await db.collection("users").document("test").getDocument()
+                print("❌ ERROR: Unauthenticated access succeeded!")
+            } catch {
+                print("✅ PASS: Unauthenticated access blocked - \(error.localizedDescription)")
+            }
+        }
+        
+        // Test 2: Try to access own data (if authenticated)
+        if let user = currentUser {
+            do {
+                let document = try await db.collection("users").document(user.id).getDocument()
+                print("✅ PASS: User can access own data - exists: \(document.exists)")
+            } catch {
+                print("❌ FAIL: User can't access own data - \(error.localizedDescription)")
+            }
+            
+            // Test 3: Try to access someone else's data
+            do {
+                let _ = try await db.collection("users").document("different-user-id").getDocument()
+                print("❌ ERROR: User accessed another user's data!")
+            } catch {
+                print("✅ PASS: User can't access other user's data - \(error.localizedDescription)")
+            }
+        }
     }
     
     // MARK: - Account Management Methods
@@ -145,316 +262,33 @@ class AppStore: ObservableObject {
     
     // MARK: - Initialization
     init() {
-        setupMockData()
+        // Check if user is already authenticated
+        if let currentUser = Auth.auth().currentUser {
+            self.currentUser = User(id: currentUser.uid, firstName: "", email: currentUser.email ?? "")
+            self.user = self.currentUser
+            self.isAuthenticated = true
+            Task {
+                await loadUserData()
+            }
+        } else {
+            loadMockData(for: "mock-user-id")
+        }
     }
     
-    // MARK: - Mock Data Setup
-    private func setupMockData() {
-        // We'll populate this with mock data shortly
-        loadMockData()
-    }
+    // MARK: - Mock Data Loading
     
-    private func loadMockData() {
-        // Mock User
-        user = User(id: "mock-user-id", firstName: "Alex", email: "alex@example.com")
+    private func loadMockData(for userId: String) {
+        let mockData = MockDataFactory.createMockData(for: userId)
         
-        // Mock Categories - UK focused
-        let foodCategory = Category(id: "cat-food", userId: "mock-user-id", name: "Food & Dining", color: "#FF6B6B", icon: "fork.knife")
-        let transportCategory = Category(id: "cat-transport", userId: "mock-user-id", name: "Transport", color: "#4ECDC4", icon: "car.fill")
-        let entertainmentCategory = Category(id: "cat-entertainment", userId: "mock-user-id", name: "Entertainment", color: "#45B7D1", icon: "tv")
-        let utilitiesCategory = Category(id: "cat-utilities", userId: "mock-user-id", name: "Bills & Utilities", color: "#96CEB4", icon: "bolt.fill")
-        let shoppingCategory = Category(id: "cat-shopping", userId: "mock-user-id", name: "Shopping", color: "#FFEAA7", icon: "bag.fill")
-        let salaryCategory = Category(id: "cat-salary", userId: "mock-user-id", name: "Salary", color: "#6C5CE7", icon: "dollarsign.circle.fill")
-        
-        categories = [foodCategory, transportCategory, entertainmentCategory, utilitiesCategory, shoppingCategory, salaryCategory]
-        
-        // Mock Accounts - UK banks including BNPL, flexible arrangements, and prepaid with enhanced data
-        let currentAccount = Account(id: "acc-current", userId: "mock-user-id", name: "Barclays Current Account", type: .current, balance: 2850.75)
-        let savingsAccount = Account(id: "acc-savings", userId: "mock-user-id", name: "HSBC Instant Saver", type: .savings, balance: 8420.00)
-        let creditAccount = Account(id: "acc-credit", userId: "mock-user-id", name: "Santander Cashback Credit Card", type: .credit, balance: -892.45, creditLimit: 3000.00)
-        let loanAccount = Account(id: "acc-loan", userId: "mock-user-id", name: "Lloyds Car Finance", type: .loan, balance: -12750.00, originalLoanAmount: 18000.00, loanTermMonths: 48, loanStartDate: Calendar.current.date(byAdding: .month, value: -18, to: Date()), interestRate: 5.9, monthlyPayment: 425.50)
-        let klarnaAccount = Account(id: "acc-klarna", userId: "mock-user-id", name: "Klarna", type: .bnpl, balance: -124.97, bnplProvider: "Klarna")
-        let clearpayAccount = Account(id: "acc-clearpay", userId: "mock-user-id", name: "Clearpay", type: .bnpl, balance: -79.98, bnplProvider: "Clearpay")
-        let familyAccount = Account(id: "acc-family", userId: "mock-user-id", name: "Loan from Parents", type: .familyFriend, balance: -5000.00, originalLoanAmount: 8000.00, loanStartDate: Calendar.current.date(byAdding: .month, value: -6, to: Date()))
-        let debtCollectionAccount = Account(id: "acc-debt", userId: "mock-user-id", name: "Lowell Debt Collection", type: .debtCollection, balance: -847.32, originalLoanAmount: 1200.00)
-        let golfClubAccount = Account(id: "acc-golf", userId: "mock-user-id", name: "Golf Club Bar Card", type: .prepaid, balance: 47.50)
-        
-        accounts = [currentAccount, savingsAccount, creditAccount, loanAccount, klarnaAccount, clearpayAccount, familyAccount, debtCollectionAccount, golfClubAccount]
-        
-        // Mock Transactions - UK focused
-        let calendar = Calendar.current
-        let today = Date()
-        
-        transactions = [
-            // Past transactions - UK businesses and terminology
-            Transaction(id: "txn-1", userId: "mock-user-id", accountId: "acc-current",
-                       categoryId: "cat-food", amount: -8.45,
-                       description: "Pret A Manger", date: calendar.date(byAdding: .day, value: -1, to: today)!),
-            
-            Transaction(id: "txn-2", userId: "mock-user-id", accountId: "acc-current",
-                       categoryId: "cat-shopping", amount: -42.99,
-                       description: "Tesco Groceries", date: calendar.date(byAdding: .day, value: -2, to: today)!),
-            
-            Transaction(id: "txn-3", userId: "mock-user-id", accountId: "acc-current",
-                       categoryId: "cat-transport", amount: -65.40,
-                       description: "Shell Petrol Station", date: calendar.date(byAdding: .day, value: -3, to: today)!),
-            
-            Transaction(id: "txn-4", userId: "mock-user-id", accountId: "acc-current",
-                       categoryId: "cat-entertainment", amount: -12.50,
-                       description: "Vue Cinema", date: calendar.date(byAdding: .day, value: -4, to: today)!),
-            
-            Transaction(id: "txn-5", userId: "mock-user-id", accountId: "acc-current",
-                       categoryId: "cat-salary", amount: 2800.00,
-                       description: "Monthly Salary", date: calendar.date(byAdding: .day, value: -5, to: today)!),
-            
-            // Upcoming scheduled transactions
-            Transaction(id: "txn-6", userId: "mock-user-id", accountId: "acc-loan",
-                       categoryId: nil, amount: -320.50,
-                       description: "Car Finance Payment", date: calendar.date(byAdding: .day, value: 3, to: today)!,
-                       isScheduled: true, recurrence: .monthly),
-            
-            Transaction(id: "txn-7", userId: "mock-user-id", accountId: "acc-current",
-                       categoryId: "cat-utilities", amount: -89.00,
-                       description: "British Gas Bill", date: calendar.date(byAdding: .day, value: 7, to: today)!,
-                       isScheduled: true, recurrence: .monthly),
-            
-            Transaction(id: "txn-8", userId: "mock-user-id", accountId: "acc-current",
-                       categoryId: "cat-utilities", amount: -45.00,
-                       description: "BT Broadband", date: calendar.date(byAdding: .day, value: 12, to: today)!,
-                       isScheduled: true, recurrence: .monthly),
-            
-            Transaction(id: "txn-9", userId: "mock-user-id", accountId: "acc-credit",
-                       categoryId: nil, amount: -75.00,
-                       description: "Credit Card Payment", date: calendar.date(byAdding: .day, value: 15, to: today)!,
-                       isScheduled: true, recurrence: .monthly),
-            
-            Transaction(id: "txn-10", userId: "mock-user-id", accountId: "acc-current",
-                       categoryId: "cat-utilities", amount: -125.00,
-                       description: "Council Tax", date: calendar.date(byAdding: .day, value: 20, to: today)!,
-                       isScheduled: true, recurrence: .monthly)
-        ]
-        
-        // Add prepaid account (golf club) transactions
-        let golfClubTransactions = [
-            // Top up transfer (money leaving current account)
-            Transaction(id: "txn-current-golf", userId: "mock-user-id", accountId: "acc-current",
-                       categoryId: nil, amount: -100.00,
-                       description: "Transfer to Golf Club Bar Card",
-                       date: calendar.date(byAdding: .day, value: -10, to: today)!),
-            
-            // Top up transfer (money arriving in golf club account)
-            Transaction(id: "txn-golf-topup", userId: "mock-user-id", accountId: "acc-golf",
-                       categoryId: nil, amount: 100.00,
-                       description: "Top up from Current Account",
-                       date: calendar.date(byAdding: .day, value: -10, to: today)!),
-            
-            // Golf club spending
-            Transaction(id: "txn-golf-1", userId: "mock-user-id", accountId: "acc-golf",
-                       categoryId: "cat-entertainment", amount: -15.50,
-                       description: "Drinks after round",
-                       date: calendar.date(byAdding: .day, value: -8, to: today)!),
-            
-            Transaction(id: "txn-golf-2", userId: "mock-user-id", accountId: "acc-golf",
-                       categoryId: "cat-food", amount: -18.00,
-                       description: "Club sandwich & coffee",
-                       date: calendar.date(byAdding: .day, value: -5, to: today)!),
-            
-            Transaction(id: "txn-golf-3", userId: "mock-user-id", accountId: "acc-golf",
-                       categoryId: "cat-entertainment", amount: -12.50,
-                       description: "Post-game pints",
-                       date: calendar.date(byAdding: .day, value: -2, to: today)!),
-            
-            Transaction(id: "txn-golf-4", userId: "mock-user-id", accountId: "acc-golf",
-                       categoryId: "cat-food", amount: -6.50,
-                       description: "Coffee & biscuits",
-                       date: today)
-        ]
-        
-        transactions.append(contentsOf: golfClubTransactions)
-        
-        // Add flexible arrangement transactions
-        let flexibleTransactions = [
-            // Family loan payments (irregular amounts, showing flexibility)
-            Transaction(id: "txn-family-1", userId: "mock-user-id", accountId: "acc-family",
-                       categoryId: nil, amount: -500.00,
-                       description: "Payment to Parents",
-                       date: calendar.date(byAdding: .month, value: -5, to: today)!),
-            
-            Transaction(id: "txn-family-2", userId: "mock-user-id", accountId: "acc-family",
-                       categoryId: nil, amount: -1000.00,
-                       description: "Payment to Parents",
-                       date: calendar.date(byAdding: .month, value: -3, to: today)!),
-            
-            Transaction(id: "txn-family-3", userId: "mock-user-id", accountId: "acc-family",
-                       categoryId: nil, amount: -750.00,
-                       description: "Payment to Parents",
-                       date: calendar.date(byAdding: .month, value: -1, to: today)!),
-            
-            Transaction(id: "txn-family-4", userId: "mock-user-id", accountId: "acc-family",
-                       categoryId: nil, amount: -750.00,
-                       description: "Payment to Parents",
-                       date: today),
-            
-            // Debt collection payments (more regular, smaller amounts)
-            Transaction(id: "txn-debt-1", userId: "mock-user-id", accountId: "acc-debt",
-                       categoryId: nil, amount: -50.00,
-                       description: "Lowell Group Payment",
-                       date: calendar.date(byAdding: .month, value: -3, to: today)!),
-            
-            Transaction(id: "txn-debt-2", userId: "mock-user-id", accountId: "acc-debt",
-                       categoryId: nil, amount: -75.00,
-                       description: "Lowell Group Payment",
-                       date: calendar.date(byAdding: .month, value: -2, to: today)!),
-            
-            Transaction(id: "txn-debt-3", userId: "mock-user-id", accountId: "acc-debt",
-                       categoryId: nil, amount: -50.00,
-                       description: "Lowell Group Payment",
-                       date: calendar.date(byAdding: .month, value: -1, to: today)!),
-            
-            Transaction(id: "txn-debt-4", userId: "mock-user-id", accountId: "acc-debt",
-                       categoryId: nil, amount: -25.00,
-                       description: "Lowell Group Payment",
-                       date: calendar.date(byAdding: .day, value: -15, to: today)!),
-            
-            // Upcoming debt collection payment (scheduled)
-            Transaction(id: "txn-debt-5", userId: "mock-user-id", accountId: "acc-debt",
-                       categoryId: nil, amount: -50.00,
-                       description: "Lowell Group Payment",
-                       date: calendar.date(byAdding: .day, value: 18, to: today)!, isScheduled: true, recurrence: .monthly)
-        ]
-        
-        transactions.append(contentsOf: flexibleTransactions)
-        
-        // Mock BNPL Plans - user-defined providers
-        let klarnaPlan = BNPLPlan(
-            id: "bnpl-klarna-1",
-            userId: "mock-user-id",
-            accountId: "acc-klarna",
-            providerName: "Klarna",
-            totalAmount: 249.95,
-            numberOfInstallments: 4,
-            frequency: .biweekly,
-            startDate: calendar.date(byAdding: .day, value: -14, to: today)!,
-            description: "ASOS Fashion Purchase"
-        )
-        
-        let clearpayPlan = BNPLPlan(
-            id: "bnpl-clearpay-1",
-            userId: "mock-user-id",
-            accountId: "acc-clearpay",
-            providerName: "Clearpay",
-            totalAmount: 159.99,
-            numberOfInstallments: 4,
-            frequency: .biweekly,
-            startDate: calendar.date(byAdding: .day, value: -7, to: today)!,
-            description: "John Lewis Home Goods"
-        )
-        
-        bnplPlans = [klarnaPlan, clearpayPlan]
-        
-        // Mock Flexible Arrangements
-        let familyLoan = FlexibleArrangement(
-            id: "flex-family-1",
-            userId: "mock-user-id",
-            accountId: "acc-family",
-            type: .familyFriendLoan,
-            originalAmount: 8000.00,
-            description: "House deposit help",
-            startDate: calendar.date(byAdding: .month, value: -6, to: today)!,
-            targetCompletionDate: calendar.date(byAdding: .year, value: 2, to: today),
-            suggestedPayment: 200.00,
-            notes: "No rush, pay when you can. Family comes first! 💙",
-            relationshipType: .parent,
-            contactName: "Mum & Dad",
-            contactPhone: "07123 456789"
-        )
-        
-        let debtCollection = FlexibleArrangement(
-            id: "flex-debt-1",
-            userId: "mock-user-id",
-            accountId: "acc-debt",
-            type: .debtCollection,
-            originalAmount: 1200.00,
-            description: "Old Argos credit card debt",
-            startDate: calendar.date(byAdding: .month, value: -3, to: today)!,
-            minimumPayment: 25.00,
-            suggestedPayment: 50.00,
-            notes: "Making steady progress. Settlement offer available.",
-            originalCreditor: "Argos Financial Services",
-            collectionAgency: "Lowell Group",
-            referenceNumber: "LG/2024/789123",
-            settlementAmount: 600.00
-        )
-        
-        flexibleArrangements = [familyLoan, debtCollection]
-        
-        // Mock Transfers
-        let golfClubTopUp = Transfer(
-            id: "transfer-golf-1",
-            userId: "mock-user-id",
-            fromAccountId: "acc-current",
-            toAccountId: "acc-golf",
-            amount: 100.00,
-            description: "Golf Club Bar Card",
-            date: calendar.date(byAdding: .day, value: -10, to: today)!,
-            transferType: .topUp
-        )
-        
-        transfers = [golfClubTopUp]
-        
-        // Add BNPL transactions to existing transactions
-        let bnplTransactions = [
-            // Klarna payments (first payment made, rest scheduled)
-            Transaction(id: "txn-klarna-1", userId: "mock-user-id", accountId: "acc-klarna",
-                       categoryId: "cat-shopping", bnplPlanId: "bnpl-klarna-1", amount: -62.49,
-                       description: "ASOS - Payment 1/4",
-                       date: calendar.date(byAdding: .day, value: -14, to: today)!),
-            
-            Transaction(id: "txn-klarna-2", userId: "mock-user-id", accountId: "acc-klarna",
-                       categoryId: "cat-shopping", bnplPlanId: "bnpl-klarna-1", amount: -62.49,
-                       description: "ASOS - Payment 2/4",
-                       date: today, isScheduled: true),
-            
-            Transaction(id: "txn-klarna-3", userId: "mock-user-id", accountId: "acc-klarna",
-                       categoryId: "cat-shopping", bnplPlanId: "bnpl-klarna-1", amount: -62.49,
-                       description: "ASOS - Payment 3/4",
-                       date: calendar.date(byAdding: .day, value: 14, to: today)!, isScheduled: true),
-            
-            Transaction(id: "txn-klarna-4", userId: "mock-user-id", accountId: "acc-klarna",
-                       categoryId: "cat-shopping", bnplPlanId: "bnpl-klarna-1", amount: -62.48,
-                       description: "ASOS - Payment 4/4",
-                       date: calendar.date(byAdding: .day, value: 28, to: today)!, isScheduled: true),
-            
-            // Clearpay payments (first payment made, rest scheduled)
-            Transaction(id: "txn-clearpay-1", userId: "mock-user-id", accountId: "acc-clearpay",
-                       categoryId: "cat-shopping", bnplPlanId: "bnpl-clearpay-1", amount: -40.00,
-                       description: "John Lewis - Payment 1/4",
-                       date: calendar.date(byAdding: .day, value: -7, to: today)!),
-            
-            Transaction(id: "txn-clearpay-2", userId: "mock-user-id", accountId: "acc-clearpay",
-                       categoryId: "cat-shopping", bnplPlanId: "bnpl-clearpay-1", amount: -40.00,
-                       description: "John Lewis - Payment 2/4",
-                       date: calendar.date(byAdding: .day, value: 7, to: today)!, isScheduled: true),
-            
-            Transaction(id: "txn-clearpay-3", userId: "mock-user-id", accountId: "acc-clearpay",
-                       categoryId: "cat-shopping", bnplPlanId: "bnpl-clearpay-1", amount: -39.99,
-                       description: "John Lewis - Payment 3/4",
-                       date: calendar.date(byAdding: .day, value: 21, to: today)!, isScheduled: true),
-            
-            Transaction(id: "txn-clearpay-4", userId: "mock-user-id", accountId: "acc-clearpay",
-                       categoryId: "cat-shopping", bnplPlanId: "bnpl-clearpay-1", amount: -40.00,
-                       description: "John Lewis - Payment 4/4",
-                       date: calendar.date(byAdding: .day, value: 35, to: today)!, isScheduled: true)
-        ]
-        
-        transactions.append(contentsOf: bnplTransactions)
-        
-        // Mock Budgets - UK appropriate amounts
-        budgets = [
-            Budget(id: "budget-food", userId: "mock-user-id", categoryId: "cat-food", amount: 400.00),
-            Budget(id: "budget-transport", userId: "mock-user-id", categoryId: "cat-transport", amount: 200.00),
-            Budget(id: "budget-entertainment", userId: "mock-user-id", categoryId: "cat-entertainment", amount: 150.00)
-        ]
+        self.user = mockData.user
+        self.accounts = mockData.accounts
+        self.transactions = mockData.transactions
+        self.categories = mockData.categories
+        self.budgets = mockData.budgets
+        self.bnplPlans = mockData.bnplPlans
+        self.flexibleArrangements = mockData.flexibleArrangements
+        self.transfers = mockData.transfers
+        self.events = mockData.events
     }
 }
 
