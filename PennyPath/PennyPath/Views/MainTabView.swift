@@ -11,6 +11,7 @@ struct MainTabView: View {
     @EnvironmentObject var appStore: AppStore
     @State private var selectedTab = 0
     @State private var showingQuickActions = false
+    @State private var showGlobalFAB = true // NEW: Control FAB visibility
     
     var body: some View {
         ZStack {
@@ -50,8 +51,20 @@ struct MainTabView: View {
             }
             .accentColor(.blue)
             
-            // Floating Action Button
-            FloatingActionButton(isExpanded: $showingQuickActions)
+            // Floating Action Button (conditionally shown)
+            if showGlobalFAB {
+                FloatingActionButton(isExpanded: $showingQuickActions)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("HideGlobalFAB"))) { _ in
+            withAnimation(.easeInOut(duration: 0.3)) {
+                showGlobalFAB = false
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowGlobalFAB"))) { _ in
+            withAnimation(.easeInOut(duration: 0.3)) {
+                showGlobalFAB = true
+            }
         }
     }
 }

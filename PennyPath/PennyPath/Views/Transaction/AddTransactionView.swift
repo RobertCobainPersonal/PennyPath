@@ -21,7 +21,6 @@ struct AddTransactionView: View {
     @State private var transactionDate = Date()
     @State private var transactionType: TransactionType = .expense
     @State private var isBusinessExpense = false
-    @State private var showingAllCategories = false
     
     // MARK: - UI State
     @State private var isLoading = false
@@ -29,9 +28,6 @@ struct AddTransactionView: View {
     @State private var errorMessage = ""
     @FocusState private var isAmountFocused: Bool
     @FocusState private var isMerchantFocused: Bool
-    
-    // Quick amount suggestions
-    private let quickAmounts = [5.0, 10.0, 25.0, 50.0, 100.0]
     
     var body: some View {
         NavigationView {
@@ -99,9 +95,6 @@ struct AddTransactionView: View {
             } message: {
                 Text(errorMessage)
             }
-            .sheet(isPresented: $showingAllCategories) {
-                AllCategoriesView(selectedCategoryId: $selectedCategoryId, transactionType: transactionType)
-            }
             .onAppear {
                 setupDefaults()
             }
@@ -127,7 +120,7 @@ struct AddTransactionView: View {
                 selectedCategoryId = ""
                 selectedToAccountId = ""
                 isBusinessExpense = false
-                merchant = "" // Clear merchant when switching to help with placeholder update
+                merchant = ""
             }
         }
     }
@@ -170,45 +163,22 @@ struct AddTransactionView: View {
     }
     
     private var quickAmountsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Quick Amounts")
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundColor(.secondary)
-            
-            HStack(spacing: 12) {
-                ForEach(quickAmounts, id: \.self) { quickAmount in
-                    Button(action: {
-                        amount = String(format: "%.2f", quickAmount)
-                        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-                        impactFeedback.impactOccurred()
-                    }) {
-                        Text("£\(Int(quickAmount))")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.blue)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(20)
-                    }
-                }
-                
-                Spacer()
-            }
-        }
+        QuickAmountButtons(
+            selectedAmount: $amount,
+            amounts: transactionType == .income ?
+                QuickAmountPresets.bills : QuickAmountPresets.standard
+        )
     }
     
     private var transferAccountsSection: some View {
         VStack(spacing: 16) {
             // From Account
-            VStack(alignment: .leading, spacing: 12) {
-                Text("From Account")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                accountPicker(selectedAccountId: $selectedAccountId, placeholder: "Select source account")
-            }
+            TransferAccountPicker(
+                fromAccountId: $selectedAccountId,
+                toAccountId: $selectedToAccountId,
+                label: "From Account",
+                isDestination: false
+            )
             
             // Transfer direction indicator
             HStack {
@@ -220,13 +190,12 @@ struct AddTransactionView: View {
             }
             
             // To Account
-            VStack(alignment: .leading, spacing: 12) {
-                Text("To Account")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                accountPicker(selectedAccountId: $selectedToAccountId, placeholder: "Select destination account")
-            }
+            TransferAccountPicker(
+                fromAccountId: $selectedAccountId,
+                toAccountId: $selectedToAccountId,
+                label: "To Account",
+                isDestination: true
+            )
         }
     }
     
@@ -236,48 +205,11 @@ struct AddTransactionView: View {
                 .font(.headline)
                 .fontWeight(.semibold)
             
-            accountPicker(selectedAccountId: $selectedAccountId, placeholder: "Select Account")
-        }
-    }
-    
-    private func accountPicker(selectedAccountId: Binding<String>, placeholder: String) -> some View {
-        Menu {
-            ForEach(appStore.accounts) { account in
-                Button(action: {
-                    selectedAccountId.wrappedValue = account.id
-                }) {
-                    HStack {
-                        Image(systemName: account.type.icon)
-                            .foregroundColor(Color(hex: account.type.color))
-                        Text(account.name)
-                        if account.id == selectedAccountId.wrappedValue {
-                            Spacer()
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-        } label: {
-            HStack {
-                if let selectedAccount = appStore.accounts.first(where: { $0.id == selectedAccountId.wrappedValue }) {
-                    Image(systemName: selectedAccount.type.icon)
-                        .foregroundColor(Color(hex: selectedAccount.type.color))
-                    Text(selectedAccount.name)
-                        .foregroundColor(.primary)
-                } else {
-                    Text(placeholder)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-                
-                Image(systemName: "chevron.down")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .padding()
-            .background(Color(.secondarySystemGroupedBackground))
-            .cornerRadius(12)
+            AccountPicker(
+                selectedAccountId: $selectedAccountId,
+                placeholder: "Select Account",
+                showBalance: true
+            )
         }
     }
     
@@ -331,189 +263,17 @@ struct AddTransactionView: View {
     }
     
     private var categorySelectionSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Category")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                Spacer()
-                
-                // Always show Manage button
-                Button("Manage") {
-                    showingAllCategories = true
-                }
-                .font(.subheadline)
-                .foregroundColor(.blue)
-            }
-            
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
-                ForEach(displayedCategories) { category in
-                    categoryButton(category: category)
-                }
-            }
-            
-            // Selected category (if not visible in grid)
-            if !selectedCategoryId.isEmpty,
-               let selectedCategory = appStore.categories.first(where: { $0.id == selectedCategoryId }),
-               !displayedCategories.contains(where: { $0.id == selectedCategoryId }) {
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Selected Category")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    categoryButton(category: selectedCategory)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
+        CategorySelectionView(
+            selectedCategoryId: $selectedCategoryId,
+            transactionType: transactionType
+        )
     }
     
     private var eventSelectionSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Event (Optional)")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                Spacer()
-                
-                Button("Manage") {
-                    // TODO: Navigate to event management
-                    print("📝 Manage events tapped")
-                }
-                .font(.subheadline)
-                .foregroundColor(.blue)
-            }
-            
-            Menu {
-                Button("No Event") {
-                    selectedEventId = ""
-                }
-                
-                Divider()
-                
-                ForEach(appStore.events.filter { $0.isActive }) { event in
-                    Button(action: {
-                        selectedEventId = event.id
-                    }) {
-                        HStack {
-                            Image(systemName: event.icon)
-                                .foregroundColor(Color(hex: event.color))
-                            Text(event.name)
-                            if event.id == selectedEventId {
-                                Spacer()
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-                
-                if !appStore.events.filter({ $0.isActive }).isEmpty &&
-                   !appStore.events.filter({ !$0.isActive }).isEmpty {
-                    Divider()
-                    
-                    // Show inactive events in submenu
-                    Menu("Past Events") {
-                        ForEach(appStore.events.filter { !$0.isActive }) { event in
-                            Button(action: {
-                                selectedEventId = event.id
-                            }) {
-                                HStack {
-                                    Image(systemName: event.icon)
-                                        .foregroundColor(Color(hex: event.color))
-                                    Text(event.name)
-                                    if event.id == selectedEventId {
-                                        Spacer()
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                Divider()
-                
-                Button("Create New Event") {
-                    // TODO: Navigate to create event
-                    print("➕ Create new event tapped")
-                }
-            } label: {
-                HStack {
-                    if let selectedEvent = appStore.events.first(where: { $0.id == selectedEventId }) {
-                        Image(systemName: selectedEvent.icon)
-                            .foregroundColor(Color(hex: selectedEvent.color))
-                        Text(selectedEvent.name)
-                            .foregroundColor(.primary)
-                    } else {
-                        Text("Select Event")
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.down")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding()
-                .background(Color(.secondarySystemGroupedBackground))
-                .cornerRadius(12)
-            }
-            
-            // Show selected event details
-            if let selectedEvent = appStore.events.first(where: { $0.id == selectedEventId }) {
-                HStack {
-                    Image(systemName: "info.circle")
-                        .foregroundColor(.secondary)
-                        .font(.caption)
-                    
-                    Text(selectedEvent.description)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Spacer()
-                }
-                .padding(.top, 4)
-            }
-        }
-    }
-    
-    private func categoryButton(category: Category) -> some View {
-        Button(action: {
-            selectedCategoryId = category.id
-            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-            impactFeedback.impactOccurred()
-        }) {
-            VStack(spacing: 6) {
-                Image(systemName: category.icon)
-                    .font(.title2)
-                    .foregroundColor(Color(hex: category.color))
-                
-                Text(category.name)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .multilineTextAlignment(.center)
-                    .foregroundColor(.primary)
-            }
-            .frame(height: 70)
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(selectedCategoryId == category.id ?
-                         Color(hex: category.color).opacity(0.2) :
-                         Color(.secondarySystemGroupedBackground))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(selectedCategoryId == category.id ?
-                           Color(hex: category.color) :
-                           Color.clear, lineWidth: 2)
-            )
-        }
-        .buttonStyle(.plain)
+        EventPickerWithHeader(
+            selectedEventId: $selectedEventId,
+            subtitle: "Group transactions by trips, projects, or occasions"
+        )
     }
     
     private var businessExpenseSection: some View {
@@ -539,27 +299,31 @@ struct AddTransactionView: View {
             
             // Receipt upload section (when business expense is enabled)
             if isBusinessExpense {
-                HStack {
-                    Image(systemName: "camera")
-                        .foregroundColor(.blue)
-                    
-                    Text("Add Receipt")
-                        .foregroundColor(.blue)
-                    
-                    Spacer()
-                    
-                    Text("Optional")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding()
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(12)
-                .onTapGesture {
-                    // TODO: Implement receipt upload
-                    print("📸 Receipt upload tapped")
-                }
+                receiptUploadSection
             }
+        }
+    }
+    
+    private var receiptUploadSection: some View {
+        HStack {
+            Image(systemName: "camera")
+                .foregroundColor(.blue)
+            
+            Text("Add Receipt")
+                .foregroundColor(.blue)
+            
+            Spacer()
+            
+            Text("Optional")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color.blue.opacity(0.1))
+        .cornerRadius(12)
+        .onTapGesture {
+            // TODO: Implement receipt upload
+            print("📸 Receipt upload tapped")
         }
     }
     
@@ -639,24 +403,6 @@ struct AddTransactionView: View {
             "Pret A Manger", "Costa Coffee", "Starbucks", "McDonald's",
             "Shell", "BP", "Esso", "Vue Cinema", "Spotify", "Netflix"
         ]
-    }
-    
-    // Context-aware categories
-    private var relevantCategories: [Category] {
-        return appStore.categories.filter { category in
-            switch transactionType {
-            case .income:
-                return category.categoryType == .income || category.categoryType == .both
-            case .expense:
-                return category.categoryType == .expense || category.categoryType == .both
-            case .transfer:
-                return false // No categories for transfers
-            }
-        }
-    }
-    
-    private var displayedCategories: [Category] {
-        return Array(relevantCategories.prefix(6))
     }
     
     // MARK: - Helper Methods
@@ -775,22 +521,20 @@ struct AddTransactionView: View {
         
         appStore.transfers.append(newTransfer)
         
-        // Create corresponding transactions (with event if selected)
+        // Create corresponding transactions
         let (fromTransaction, toTransaction) = newTransfer.generateTransactions()
         
         // Add event to transfer transactions if selected
+        var updatedFromTransaction = fromTransaction
+        var updatedToTransaction = toTransaction
+        
         if !selectedEventId.isEmpty {
-            var updatedFromTransaction = fromTransaction
-            var updatedToTransaction = toTransaction
-            
-            // Note: We'd need to update the Transaction init to support eventId
+            // Note: Would need to update Transaction model to support eventId in init
             // For now, just append the original transactions
-            appStore.transactions.append(fromTransaction)
-            appStore.transactions.append(toTransaction)
-        } else {
-            appStore.transactions.append(fromTransaction)
-            appStore.transactions.append(toTransaction)
         }
+        
+        appStore.transactions.append(updatedFromTransaction)
+        appStore.transactions.append(updatedToTransaction)
         
         // Update account balances
         if let fromIndex = appStore.accounts.firstIndex(where: { $0.id == selectedAccountId }) {
@@ -804,95 +548,6 @@ struct AddTransactionView: View {
         if !selectedEventId.isEmpty {
             let eventName = appStore.events.first(where: { $0.id == selectedEventId })?.name ?? "Unknown"
             print("🎯 Transfer tagged to event: \(eventName)")
-        }
-    }
-}
-
-// MARK: - Transaction Type Enum
-
-enum TransactionType: String, CaseIterable {
-    case income = "income"
-    case expense = "expense"
-    case transfer = "transfer"
-}
-
-// MARK: - All Categories View
-
-struct AllCategoriesView: View {
-    @EnvironmentObject var appStore: AppStore
-    @Environment(\.dismiss) private var dismiss
-    @Binding var selectedCategoryId: String
-    let transactionType: TransactionType
-    
-    private var relevantCategories: [Category] {
-        return appStore.categories.filter { category in
-            switch transactionType {
-            case .income:
-                return category.categoryType == .income || category.categoryType == .both
-            case .expense:
-                return category.categoryType == .expense || category.categoryType == .both
-            case .transfer:
-                return false
-            }
-        }
-    }
-    
-    var body: some View {
-        NavigationView {
-            ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 16) {
-                    ForEach(relevantCategories) { category in
-                        Button(action: {
-                            selectedCategoryId = category.id
-                            dismiss()
-                        }) {
-                            VStack(spacing: 8) {
-                                Image(systemName: category.icon)
-                                    .font(.title2)
-                                    .foregroundColor(Color(hex: category.color))
-                                
-                                Text(category.name)
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .multilineTextAlignment(.center)
-                                    .foregroundColor(.primary)
-                            }
-                            .frame(height: 80)
-                            .frame(maxWidth: .infinity)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(selectedCategoryId == category.id ?
-                                         Color(hex: category.color).opacity(0.2) :
-                                         Color(.secondarySystemGroupedBackground))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(selectedCategoryId == category.id ?
-                                           Color(hex: category.color) :
-                                           Color.clear, lineWidth: 2)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding()
-            }
-            .navigationTitle("\(transactionType == .income ? "Income" : "Expense") Categories")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Manage") {
-                        // TODO: Navigate to category management
-                        print("📝 Manage categories tapped")
-                    }
-                }
-            }
         }
     }
 }

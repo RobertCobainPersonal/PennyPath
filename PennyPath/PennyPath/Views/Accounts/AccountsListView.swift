@@ -100,11 +100,17 @@ struct AccountsListView: View {
                 // Group header
                 groupHeaderView(for: group)
                 
-                // Accounts in this group
+                // Accounts in this group using extracted component
                 CardView {
                     VStack(spacing: 0) {
                         ForEach(group.accounts) { account in
-                            AccountRowView(account: account)
+                            AccountRowView(
+                                account: account,
+                                showBalance: true,
+                                showTrend: true,
+                                showChevron: true,
+                                navigationDestination: AnyView(AccountDetailView(accountId: account.id, appStore: appStore))
+                            )
                             
                             if account.id != group.accounts.last?.id {
                                 Divider()
@@ -151,102 +157,10 @@ struct AccountsListView: View {
     }
 }
 
-// MARK: - Account Row Component
-struct AccountRowView: View {
-    let account: Account
-    @EnvironmentObject var appStore: AppStore
-    
-    var body: some View {
-        NavigationLink(destination: AccountDetailView(accountId: account.id, appStore: appStore)) {
-            HStack(spacing: 12) {
-                // Account type icon
-                ZStack {
-                    Circle()
-                        .fill(Color(hex: account.type.color).opacity(0.15))
-                        .frame(width: 44, height: 44)
-                    
-                    Image(systemName: account.type.icon)
-                        .font(.headline)
-                        .foregroundColor(Color(hex: account.type.color))
-                }
-                
-                // Account info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(account.name)
-                        .font(.headline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    
-                    Text(account.type.displayName)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-                
-                Spacer()
-                
-                // Balance and arrow
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(account.balance.formattedAsCurrency)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(account.balance >= 0 ? .primary : .red)
-                    
-                    HStack(spacing: 4) {
-                        // Simple trend indicator (could be enhanced later)
-                        Image(systemName: "minus")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        
-                        Text("No change")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .padding(.vertical, 8)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 // MARK: - Preview Provider
 struct AccountsListView_Previews: PreviewProvider {
     static var previews: some View {
         AccountsListView(appStore: AppStore())
             .environmentObject(AppStore())
-    }
-}
-
-struct AccountRowView_Previews: PreviewProvider {
-    static var previews: some View {
-        NavigationView {
-            VStack {
-                AccountRowView(account: Account(
-                    userId: "test",
-                    name: "Barclays Current Account",
-                    type: .current,
-                    balance: 2850.75
-                ))
-                .environmentObject(AppStore())
-                
-                Divider()
-                
-                AccountRowView(account: Account(
-                    userId: "test",
-                    name: "Santander Credit Card",
-                    type: .credit,
-                    balance: -892.45
-                ))
-                .environmentObject(AppStore())
-            }
-            .padding()
-            .background(Color(.systemGroupedBackground))
-        }
     }
 }
