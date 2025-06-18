@@ -229,13 +229,19 @@ struct AccountDetailView: View {
             switch selectedChartType {
             case .balanceForecast:
                 if let account = viewModel.account {
-                    SimpleBalanceChart(account: account)
+                    BalanceForecastChart(
+                        account: account,
+                        transactions: appStore.transactions,
+                        scheduledTransactions: viewModel.upcomingTransactions
+                    )
                 } else {
                     Text("Account not found")
                         .foregroundColor(.secondary)
                 }
+                
             case .spendingTrends:
                 spendingTrendsPlaceholder
+                
             case .paymentSchedule:
                 paymentSchedulePlaceholder
             }
