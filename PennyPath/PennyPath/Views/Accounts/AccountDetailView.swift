@@ -5,8 +5,8 @@
 //  Created by Robert Cobain on 16/06/2025.
 //
 
-
 import SwiftUI
+import Charts
 
 struct AccountDetailView: View {
     @EnvironmentObject var appStore: AppStore
@@ -222,6 +222,100 @@ struct AccountDetailView: View {
         }
     }
     
+    // MARK: - Chart Components
+    
+    private var chartPlaceholder: some View {
+        VStack(spacing: 16) {
+            switch selectedChartType {
+            case .balanceForecast:
+                if let account = viewModel.account {
+                    SimpleBalanceChart(account: account)
+                } else {
+                    Text("Account not found")
+                        .foregroundColor(.secondary)
+                }
+            case .spendingTrends:
+                spendingTrendsPlaceholder
+            case .paymentSchedule:
+                paymentSchedulePlaceholder
+            }
+        }
+        .frame(minHeight: 180)
+    }
+    
+    // Temporary placeholders for other chart types while we test SimpleBalanceChart
+    private var spendingTrendsPlaceholder: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("Spending by Category")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                Spacer()
+                
+                Text("Coming Soon")
+                    .font(.caption)
+                    .foregroundColor(.blue)
+            }
+            
+            RoundedRectangle(cornerRadius: 8)
+                .fill(LinearGradient(
+                    colors: [Color.orange.opacity(0.3), Color.orange.opacity(0.1)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ))
+                .frame(height: 120)
+                .overlay(
+                    VStack {
+                        Text("📊")
+                            .font(.system(size: 40))
+                        Text("Spending Trends Chart")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("(Interactive category breakdown)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                )
+        }
+    }
+    
+    private var paymentSchedulePlaceholder: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("Payment Calendar")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                Spacer()
+                
+                Text("\(viewModel.upcomingTransactions.count) upcoming")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            RoundedRectangle(cornerRadius: 8)
+                .fill(LinearGradient(
+                    colors: [Color.purple.opacity(0.3), Color.purple.opacity(0.1)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ))
+                .frame(height: 120)
+                .overlay(
+                    VStack {
+                        Text("📅")
+                            .font(.system(size: 40))
+                        Text("Payment Schedule Calendar")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("(Visual timeline of upcoming payments)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                )
+        }
+    }
+    
     private var bnplPlansSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader(title: "Active BNPL Plans", icon: "calendar.badge.clock")
@@ -323,18 +417,17 @@ struct AccountDetailView: View {
                     CardView {
                         VStack(spacing: 12) {
                             ForEach(viewModel.upcomingTransactions) { transaction in
-                                NavigationLink(destination: TransactionDetailView(transaction: transaction)) {
-                                    TransactionRowView(
-                                        transaction: transaction,
-                                        showAccount: false,    // Remove redundant account name
-                                        showEvent: true,       // Keep event tags
-                                        showDate: true,        // Show temporal context
-                                        style: .compact,       // Use compact style
-                                        showDueContext: true,  // Show "Due in X days"
-                                        onTap: {}             // Show chevron for navigation
-                                    )
-                                }
-                                .buttonStyle(.plain)
+                                TransactionRowView(
+                                    transaction: transaction,
+                                    showAccount: false,    // Remove redundant account name
+                                    showEvent: true,       // Keep event tags
+                                    showDate: true,        // Show temporal context
+                                    style: .compact,       // Use compact style
+                                    showDueContext: true,  // Show "Due in X days"
+                                    onTap: {
+                                        print("Tapped upcoming transaction: \(transaction.description)")
+                                    }
+                                )
                                 
                                 if transaction.id != viewModel.upcomingTransactions.last?.id {
                                     Divider()
@@ -386,17 +479,16 @@ struct AccountDetailView: View {
                     CardView {
                         VStack(spacing: 0) {
                             ForEach(viewModel.recentTransactions) { transaction in
-                                NavigationLink(destination: TransactionDetailView(transaction: transaction)) {
-                                    TransactionRowView(
-                                        transaction: transaction,
-                                        showAccount: false, // Remove redundant account name
-                                        showEvent: true,    // Keep event tags
-                                        showDate: true,     // Show transaction dates
-                                        style: .compact,    // Use compact style
-                                        onTap: {}          // Show chevron for navigation
-                                    )
-                                }
-                                .buttonStyle(.plain)
+                                TransactionRowView(
+                                    transaction: transaction,
+                                    showAccount: false, // Remove redundant account name
+                                    showEvent: true,    // Keep event tags
+                                    showDate: true,     // Show transaction dates
+                                    style: .compact,    // Use compact style
+                                    onTap: {
+                                        print("Tapped recent transaction: \(transaction.description)")
+                                    }
+                                )
                                 
                                 if transaction.id != viewModel.recentTransactions.last?.id {
                                     Divider()
@@ -467,7 +559,7 @@ struct AccountDetailView: View {
     private var enhancedThreeDotsMenu: some View {
         Menu {
             Button(action: {
-                print("Add transaction to this account")
+                showingAddTransaction = true
             }) {
                 HStack {
                     Image(systemName: "plus.circle")
@@ -518,130 +610,6 @@ struct AccountDetailView: View {
         } label: {
             Image(systemName: "ellipsis.circle")
                 .fontWeight(.semibold)
-        }
-    }
-    
-    // MARK: - Chart Components
-    
-    private var chartPlaceholder: some View {
-        VStack(spacing: 16) {
-            switch selectedChartType {
-            case .balanceForecast:
-                balanceForecastChart
-            case .spendingTrends:
-                spendingTrendsChart
-            case .paymentSchedule:
-                paymentScheduleChart
-            }
-        }
-        .frame(height: 200)
-    }
-    
-    private var balanceForecastChart: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("30-Day Balance Projection")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                Spacer()
-                
-                Text("+£1,247")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.green)
-            }
-            
-            RoundedRectangle(cornerRadius: 8)
-                .fill(LinearGradient(
-                    colors: [Color.blue.opacity(0.3), Color.blue.opacity(0.1)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ))
-                .overlay(
-                    VStack {
-                        Text("📈")
-                            .font(.system(size: 40))
-                        Text("Balance Forecast Chart")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("(Shows projected balance with scheduled payments)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                )
-        }
-    }
-    
-    private var spendingTrendsChart: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("Spending by Category")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                Spacer()
-                
-                Button("Food & Dining") {
-                    // TODO: Toggle category filter
-                }
-                .font(.caption)
-                .foregroundColor(.blue)
-            }
-            
-            RoundedRectangle(cornerRadius: 8)
-                .fill(LinearGradient(
-                    colors: [Color.orange.opacity(0.3), Color.orange.opacity(0.1)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ))
-                .overlay(
-                    VStack {
-                        Text("📊")
-                            .font(.system(size: 40))
-                        Text("Spending Trends Chart")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("(Stacked bars by category, toggle merchant view)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                )
-        }
-    }
-    
-    private var paymentScheduleChart: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("Payment Calendar")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                Spacer()
-                
-                Text("5 upcoming")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            RoundedRectangle(cornerRadius: 8)
-                .fill(LinearGradient(
-                    colors: [Color.purple.opacity(0.3), Color.purple.opacity(0.1)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ))
-                .overlay(
-                    VStack {
-                        Text("📅")
-                            .font(.system(size: 40))
-                        Text("Payment Schedule Calendar")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("(Mini calendar with payment dots/amounts)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                )
         }
     }
     
@@ -959,7 +927,7 @@ enum ChartType: String, CaseIterable {
 struct AccountDetailView_Previews: PreviewProvider {
     static var previews: some View {
         NavigationView {
-            AccountDetailView(accountId: "acc-golf", appStore: AppStore())
+            AccountDetailView(accountId: "acc-current", appStore: AppStore())
                 .environmentObject(AppStore())
         }
     }
