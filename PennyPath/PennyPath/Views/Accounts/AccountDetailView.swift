@@ -1,9 +1,10 @@
 //
-//  AccountDetailView.swift (Enhanced - Fixed ViewModel Issues)
+//  AccountDetailView.swift (Enhanced - Fixed Navigation Issues)
 //  PennyPath
 //
 //  Created by Robert Cobain on 16/06/2025.
 //
+
 
 import SwiftUI
 
@@ -14,8 +15,9 @@ struct AccountDetailView: View {
     
     @State private var showingEditAccount = false
     @State private var selectedChartType: ChartType = .balanceForecast
-    @State private var showingUpcomingPayments = true
+    @State private var showingUpcomingTransactions = true
     @State private var showingRecentTransactions = true
+    @State private var showingAddTransaction = false
     
     let accountId: String
     
@@ -70,6 +72,9 @@ struct AccountDetailView: View {
             if let account = viewModel.account {
                 EditAccountView(account: account)
             }
+        }
+        .sheet(isPresented: $showingAddTransaction) {
+            AddTransactionView(preselectedAccountId: accountId)
         }
         .onReceive(appStore.$accounts) { accounts in
             if !accounts.contains(where: { $0.id == accountId }) {
@@ -281,11 +286,11 @@ struct AccountDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             Button(action: {
                 withAnimation(.easeInOut(duration: 0.3)) {
-                    showingUpcomingPayments.toggle()
+                    showingUpcomingTransactions.toggle()
                 }
             }) {
                 HStack {
-                    sectionHeader(title: "Upcoming Payments", icon: "calendar.badge.clock")
+                    sectionHeader(title: "Upcoming Transactions", icon: "calendar.badge.clock")
                     
                     Spacer()
                     
@@ -300,14 +305,14 @@ struct AccountDetailView: View {
                             .cornerRadius(8)
                     }
                     
-                    Image(systemName: showingUpcomingPayments ? "chevron.up" : "chevron.down")
+                    Image(systemName: showingUpcomingTransactions ? "chevron.up" : "chevron.down")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
             .buttonStyle(.plain)
             
-            if showingUpcomingPayments {
+            if showingUpcomingTransactions {
                 if viewModel.upcomingTransactions.isEmpty {
                     emptyStateView(
                         icon: "checkmark.circle",
@@ -318,10 +323,22 @@ struct AccountDetailView: View {
                     CardView {
                         VStack(spacing: 12) {
                             ForEach(viewModel.upcomingTransactions) { transaction in
-                                UpcomingPaymentRow(transaction: transaction)
+                                NavigationLink(destination: TransactionDetailView(transaction: transaction)) {
+                                    TransactionRowView(
+                                        transaction: transaction,
+                                        showAccount: false,    // Remove redundant account name
+                                        showEvent: true,       // Keep event tags
+                                        showDate: true,        // Show temporal context
+                                        style: .compact,       // Use compact style
+                                        showDueContext: true,  // Show "Due in X days"
+                                        onTap: {}             // Show chevron for navigation
+                                    )
+                                }
+                                .buttonStyle(.plain)
                                 
                                 if transaction.id != viewModel.upcomingTransactions.last?.id {
                                     Divider()
+                                        .padding(.leading, 64) // Align with TransactionRowView
                                 }
                             }
                         }
@@ -369,17 +386,21 @@ struct AccountDetailView: View {
                     CardView {
                         VStack(spacing: 0) {
                             ForEach(viewModel.recentTransactions) { transaction in
-                                TransactionRowView(
-                                    transaction: transaction,
-                                    showAccount: false,
-                                    onTap: {
-                                        print("Tapped transaction: \(transaction.description)")
-                                    }
-                                )
+                                NavigationLink(destination: TransactionDetailView(transaction: transaction)) {
+                                    TransactionRowView(
+                                        transaction: transaction,
+                                        showAccount: false, // Remove redundant account name
+                                        showEvent: true,    // Keep event tags
+                                        showDate: true,     // Show transaction dates
+                                        style: .compact,    // Use compact style
+                                        onTap: {}          // Show chevron for navigation
+                                    )
+                                }
+                                .buttonStyle(.plain)
                                 
                                 if transaction.id != viewModel.recentTransactions.last?.id {
                                     Divider()
-                                        .padding(.leading, 44)
+                                        .padding(.leading, 64) // Consistent divider alignment
                                 }
                             }
                         }
@@ -873,9 +894,14 @@ struct AccountDetailView: View {
     private func emptyStateView(icon: String, title: String, subtitle: String) -> some View {
         CardView {
             VStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 40))
-                    .foregroundColor(.secondary)
+                Button(action: {
+                    showingAddTransaction = true
+                }) {
+                    Image(systemName: icon)
+                        .font(.system(size: 40))
+                        .foregroundColor(.blue) // Make it actionable blue instead of secondary
+                }
+                .buttonStyle(.plain)
                 
                 Text(title)
                     .font(.headline)
@@ -885,6 +911,12 @@ struct AccountDetailView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
+                
+                Button("Add Transaction") {
+                    showingAddTransaction = true
+                }
+                .foregroundColor(.blue)
+                .padding(.top, 8)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 20)

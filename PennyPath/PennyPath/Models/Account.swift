@@ -183,7 +183,7 @@ enum AccountType: String, CaseIterable, Codable {
     var icon: String {
         switch self {
         case .current: return "banknote"
-        case .savings: return "square.stack.3d.up.fill"
+        case .savings: return "building.columns.circle"
         case .credit: return "creditcard"
         case .loan: return "house"
         case .bnpl: return "calendar.badge.clock"

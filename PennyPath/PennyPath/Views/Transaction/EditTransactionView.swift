@@ -1,33 +1,30 @@
 //
-//  AddTransactionView.swift
+//  EditTransactionView.swift
 //  PennyPath
 //
-//  Created by Robert Cobain on 16/06/2025.
+//  Created by Robert Cobain on 18/06/2025.
 //
 
 import SwiftUI
 
-struct AddTransactionView: View {
+struct EditTransactionView: View {
     @EnvironmentObject var appStore: AppStore
     @Environment(\.dismiss) private var dismiss
     
-    let preselectedAccountId: String? // NEW: Optional pre-selected account
-    
-    // Initialize with optional pre-selected account
-    init(preselectedAccountId: String? = nil) {
-        self.preselectedAccountId = preselectedAccountId
-    }
+    let originalTransaction: Transaction
     
     // MARK: - Form State
-    @State private var amount: String = ""
-    @State private var merchant: String = ""
-    @State private var selectedAccountId: String = ""
+    @State private var amount: String
+    @State private var merchant: String
+    @State private var selectedAccountId: String
     @State private var selectedToAccountId: String = "" // For transfers
-    @State private var selectedCategoryId: String = ""
-    @State private var selectedEventId: String = ""
-    @State private var transactionDate = Date()
-    @State private var transactionType: TransactionType = .expense
-    @State private var isBusinessExpense = false
+    @State private var selectedCategoryId: String
+    @State private var selectedEventId: String
+    @State private var transactionDate: Date
+    @State private var transactionType: TransactionType
+    @State private var isBusinessExpense: Bool = false
+    @State private var isScheduled: Bool
+    @State private var recurrence: RecurrenceType?
     
     // MARK: - UI State
     @State private var isLoading = false
@@ -36,12 +33,33 @@ struct AddTransactionView: View {
     @FocusState private var isAmountFocused: Bool
     @FocusState private var isMerchantFocused: Bool
     
+    init(transaction: Transaction) {
+        self.originalTransaction = transaction
+        
+        // Initialize form state with existing transaction data
+        self._amount = State(initialValue: String(format: "%.2f", abs(transaction.amount)))
+        self._merchant = State(initialValue: transaction.description)
+        self._selectedAccountId = State(initialValue: transaction.accountId)
+        self._selectedCategoryId = State(initialValue: transaction.categoryId ?? "")
+        self._selectedEventId = State(initialValue: transaction.eventId ?? "")
+        self._transactionDate = State(initialValue: transaction.date)
+        self._isScheduled = State(initialValue: transaction.isScheduled)
+        self._recurrence = State(initialValue: transaction.recurrence)
+        
+        // Determine transaction type
+        if transaction.categoryId == nil {
+            self._transactionType = State(initialValue: .transfer)
+        } else {
+            self._transactionType = State(initialValue: transaction.amount >= 0 ? .income : .expense)
+        }
+    }
+    
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 24) {
-                    // Transaction Type Toggle
-                    transactionTypeToggle
+                    // Transaction Type Toggle (disabled for existing transactions)
+                    transactionTypeDisplay
                     
                     // Amount Entry Section
                     amountEntrySection
@@ -74,13 +92,16 @@ struct AddTransactionView: View {
                         businessExpenseSection
                     }
                     
+                    // Scheduled Transaction Settings
+                    scheduledTransactionSection
+                    
                     // Date Selection
                     dateSelectionSection
                 }
                 .padding()
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Add Transaction")
+            .navigationTitle("Edit Transaction")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -102,33 +123,38 @@ struct AddTransactionView: View {
             } message: {
                 Text(errorMessage)
             }
-            .onAppear {
-                setupDefaults()
-            }
         }
     }
     
     // MARK: - View Components
     
-    private var transactionTypeToggle: some View {
+    private var transactionTypeDisplay: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Transaction Type")
                 .font(.headline)
                 .fontWeight(.semibold)
             
-            Picker("Type", selection: $transactionType) {
-                Text("💸 Expense").tag(TransactionType.expense)
-                Text("💰 Income").tag(TransactionType.income)
-                Text("🔄 Transfer").tag(TransactionType.transfer)
+            HStack {
+                Image(systemName: transactionTypeIcon)
+                    .foregroundColor(transactionTypeColor)
+                    .font(.title2)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(transactionType == .transfer ? "🔄 Transfer" :
+                         transactionType == .income ? "💰 Income" : "💸 Expense")
+                        .font(.headline)
+                        .fontWeight(.medium)
+                    
+                    Text("Transaction type cannot be changed when editing")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
             }
-            .pickerStyle(SegmentedPickerStyle())
-            .onChange(of: transactionType) { _ in
-                // Clear relevant fields when switching types
-                selectedCategoryId = ""
-                selectedToAccountId = ""
-                isBusinessExpense = false
-                merchant = ""
-            }
+            .padding()
+            .background(Color(.secondarySystemGroupedBackground))
+            .cornerRadius(12)
         }
     }
     
@@ -154,14 +180,6 @@ struct AddTransactionView: View {
                     }
                 
                 Spacer()
-                
-                Button(action: {
-                    // TODO: Add calculator functionality
-                }) {
-                    Image(systemName: "plus.forwardslash.minus")
-                        .font(.title3)
-                        .foregroundColor(.blue)
-                }
             }
             .padding()
             .background(Color(.secondarySystemGroupedBackground))
@@ -232,41 +250,7 @@ struct AddTransactionView: View {
                 .padding()
                 .background(Color(.secondarySystemGroupedBackground))
                 .cornerRadius(12)
-            
-            // Context-aware suggestions
-            if !merchant.isEmpty && isMerchantFocused && transactionType != .transfer {
-                contextualSuggestions
-            }
         }
-    }
-    
-    private var contextualSuggestions: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Suggestions")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 8) {
-                ForEach(filteredSuggestions, id: \.self) { suggestion in
-                    Button(action: {
-                        merchant = suggestion
-                        isMerchantFocused = false
-                        if transactionType == .expense {
-                            suggestCategoryFor(merchant: suggestion)
-                        }
-                    }) {
-                        Text(suggestion)
-                            .font(.caption)
-                            .foregroundColor(.blue)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(8)
-                    }
-                }
-            }
-        }
-        .padding(.top, 8)
     }
     
     private var categorySelectionSection: some View {
@@ -303,34 +287,53 @@ struct AddTransactionView: View {
             .padding()
             .background(Color(.secondarySystemGroupedBackground))
             .cornerRadius(12)
-            
-            // Receipt upload section (when business expense is enabled)
-            if isBusinessExpense {
-                receiptUploadSection
-            }
         }
     }
     
-    private var receiptUploadSection: some View {
-        HStack {
-            Image(systemName: "camera")
-                .foregroundColor(.blue)
+    private var scheduledTransactionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Scheduled Transaction")
+                .font(.headline)
+                .fontWeight(.semibold)
             
-            Text("Add Receipt")
-                .foregroundColor(.blue)
-            
-            Spacer()
-            
-            Text("Optional")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding()
-        .background(Color.blue.opacity(0.1))
-        .cornerRadius(12)
-        .onTapGesture {
-            // TODO: Implement receipt upload
-            print("📸 Receipt upload tapped")
+            VStack(spacing: 16) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Recurring Payment")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        
+                        Text("Set up automatic recurring payments")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Toggle("", isOn: $isScheduled)
+                }
+                
+                if isScheduled {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Recurrence")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        
+                        Picker("Recurrence", selection: Binding(
+                            get: { recurrence ?? .monthly },
+                            set: { recurrence = $0 }
+                        )) {
+                            ForEach(RecurrenceType.allCases, id: \.self) { type in
+                                Text(type.displayName).tag(type)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                }
+            }
+            .padding()
+            .background(Color(.secondarySystemGroupedBackground))
+            .cornerRadius(12)
         }
     }
     
@@ -367,7 +370,6 @@ struct AddTransactionView: View {
         return true
     }
     
-    // Context-aware labels and placeholders
     private var contextualMerchantLabel: String {
         switch transactionType {
         case .income: return "Income Source"
@@ -384,49 +386,23 @@ struct AddTransactionView: View {
         }
     }
     
-    // Context-aware suggestions
-    private var filteredSuggestions: [String] {
-        if merchant.count < 2 {
-            return []
+    private var transactionTypeIcon: String {
+        switch transactionType {
+        case .income: return "arrow.down.circle"
+        case .expense: return "arrow.up.circle"
+        case .transfer: return "arrow.left.arrow.right.circle"
         }
-        
-        let suggestions = transactionType == .income ? incomeSuggestions : expenseSuggestions
-        return suggestions.filter {
-            $0.localizedCaseInsensitiveContains(merchant)
-        }.prefix(6).map { $0 }
     }
     
-    private var incomeSuggestions: [String] {
-        return [
-            "Acme Corp Ltd", "Freelance Client", "Investment Dividend",
-            "Rental Property", "Side Project", "Cashback Reward",
-            "Gift", "Tax Refund", "Bonus Payment", "Commission"
-        ]
-    }
-    
-    private var expenseSuggestions: [String] {
-        return [
-            "Tesco", "Sainsbury's", "ASDA", "Morrisons", "M&S",
-            "Pret A Manger", "Costa Coffee", "Starbucks", "McDonald's",
-            "Shell", "BP", "Esso", "Vue Cinema", "Spotify", "Netflix"
-        ]
+    private var transactionTypeColor: Color {
+        switch transactionType {
+        case .income: return .green
+        case .expense: return .blue
+        case .transfer: return .orange
+        }
     }
     
     // MARK: - Helper Methods
-    
-    private func setupDefaults() {
-        // Default to most used account (current account if available)
-        if let currentAccount = appStore.accounts.first(where: { $0.type == .current }) {
-            selectedAccountId = currentAccount.id
-        } else if let firstAccount = appStore.accounts.first {
-            selectedAccountId = firstAccount.id
-        }
-        
-        // Focus on amount field for immediate entry
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            isAmountFocused = true
-        }
-    }
     
     private func formatAmountInput(_ input: String) -> String {
         let filtered = input.filter { $0.isNumber || $0 == "." }
@@ -440,129 +416,77 @@ struct AddTransactionView: View {
         return filtered
     }
     
-    private func suggestCategoryFor(merchant: String) {
-        let merchantCategories: [String: String] = [
-            "Tesco": "cat-shopping",
-            "Sainsbury's": "cat-shopping",
-            "ASDA": "cat-shopping",
-            "Morrisons": "cat-shopping",
-            "Pret A Manger": "cat-food",
-            "Costa Coffee": "cat-food",
-            "Starbucks": "cat-food",
-            "McDonald's": "cat-food",
-            "Shell": "cat-transport",
-            "BP": "cat-transport",
-            "Esso": "cat-transport",
-            "Vue Cinema": "cat-entertainment",
-            "Spotify": "cat-subscriptions",
-            "Netflix": "cat-subscriptions"
-        ]
-        
-        if let categoryId = merchantCategories[merchant] {
-            selectedCategoryId = categoryId
-        }
-    }
-    
     private func saveTransaction() {
         guard isFormValid else { return }
         
         isLoading = true
         
-        if transactionType == .transfer {
-            saveTransfer()
+        // Calculate the amount difference for account balance adjustment
+        let oldAmount = originalTransaction.amount
+        let newAmount = (Double(amount) ?? 0) * (transactionType == .income ? 1 : -1)
+        let amountDifference = newAmount - oldAmount
+        
+        // Create updated transaction
+        let updatedTransaction = Transaction(
+            id: originalTransaction.id,
+            userId: originalTransaction.userId,
+            accountId: selectedAccountId,
+            categoryId: selectedCategoryId.isEmpty ? nil : selectedCategoryId,
+            bnplPlanId: originalTransaction.bnplPlanId,
+            eventId: selectedEventId.isEmpty ? nil : selectedEventId,
+            amount: newAmount,
+            description: merchant,
+            date: transactionDate,
+            isScheduled: isScheduled,
+            recurrence: isScheduled ? recurrence : nil
+        )
+        
+        // Update transaction in AppStore
+        if let index = appStore.transactions.firstIndex(where: { $0.id == originalTransaction.id }) {
+            appStore.transactions[index] = updatedTransaction
+        }
+        
+        // Update account balances if account changed or amount changed
+        if selectedAccountId != originalTransaction.accountId {
+            // Account changed - reverse old amount from old account, add new amount to new account
+            if let oldAccountIndex = appStore.accounts.firstIndex(where: { $0.id == originalTransaction.accountId }) {
+                appStore.accounts[oldAccountIndex].balance -= oldAmount
+            }
+            
+            if let newAccountIndex = appStore.accounts.firstIndex(where: { $0.id == selectedAccountId }) {
+                appStore.accounts[newAccountIndex].balance += newAmount
+            }
         } else {
-            saveRegularTransaction()
+            // Same account - just adjust by the difference
+            if let accountIndex = appStore.accounts.firstIndex(where: { $0.id == selectedAccountId }) {
+                appStore.accounts[accountIndex].balance += amountDifference
+            }
         }
         
         // Success feedback
         let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
         impactFeedback.impactOccurred()
         
+        print("✏️ Transaction updated: \(merchant) - £\(abs(newAmount))")
+        
         isLoading = false
         dismiss()
-    }
-    
-    private func saveRegularTransaction() {
-        let transactionAmount = (Double(amount) ?? 0) * (transactionType == .income ? 1 : -1)
-        
-        let newTransaction = Transaction(
-            userId: appStore.currentUser?.id ?? "mock-user-id",
-            accountId: selectedAccountId,
-            categoryId: selectedCategoryId.isEmpty ? nil : selectedCategoryId,
-            eventId: selectedEventId.isEmpty ? nil : selectedEventId,
-            amount: transactionAmount,
-            description: merchant,
-            date: transactionDate
-        )
-        
-        appStore.transactions.append(newTransaction)
-        
-        // Update account balance
-        if let accountIndex = appStore.accounts.firstIndex(where: { $0.id == selectedAccountId }) {
-            appStore.accounts[accountIndex].balance += transactionAmount
-        }
-        
-        print("📊 \(transactionType.rawValue.capitalized) transaction created: \(merchant) - £\(abs(transactionAmount))")
-        if !selectedEventId.isEmpty {
-            let eventName = appStore.events.first(where: { $0.id == selectedEventId })?.name ?? "Unknown"
-            print("🎯 Tagged to event: \(eventName)")
-        }
-        if isBusinessExpense {
-            print("💼 Business expense marked")
-        }
-    }
-    
-    private func saveTransfer() {
-        guard let transferAmount = Double(amount) else { return }
-        
-        // Create transfer record
-        let newTransfer = Transfer(
-            userId: appStore.currentUser?.id ?? "mock-user-id",
-            fromAccountId: selectedAccountId,
-            toAccountId: selectedToAccountId,
-            amount: transferAmount,
-            description: merchant,
-            date: transactionDate,
-            transferType: .manual
-        )
-        
-        appStore.transfers.append(newTransfer)
-        
-        // Create corresponding transactions
-        let (fromTransaction, toTransaction) = newTransfer.generateTransactions()
-        
-        // Add event to transfer transactions if selected
-        var updatedFromTransaction = fromTransaction
-        var updatedToTransaction = toTransaction
-        
-        if !selectedEventId.isEmpty {
-            // Note: Would need to update Transaction model to support eventId in init
-            // For now, just append the original transactions
-        }
-        
-        appStore.transactions.append(updatedFromTransaction)
-        appStore.transactions.append(updatedToTransaction)
-        
-        // Update account balances
-        if let fromIndex = appStore.accounts.firstIndex(where: { $0.id == selectedAccountId }) {
-            appStore.accounts[fromIndex].balance -= transferAmount
-        }
-        if let toIndex = appStore.accounts.firstIndex(where: { $0.id == selectedToAccountId }) {
-            appStore.accounts[toIndex].balance += transferAmount
-        }
-        
-        print("🔄 Transfer created: £\(transferAmount) from \(selectedAccountId) to \(selectedToAccountId)")
-        if !selectedEventId.isEmpty {
-            let eventName = appStore.events.first(where: { $0.id == selectedEventId })?.name ?? "Unknown"
-            print("🎯 Transfer tagged to event: \(eventName)")
-        }
     }
 }
 
 // MARK: - Preview Provider
-struct AddTransactionView_Previews: PreviewProvider {
+struct EditTransactionView_Previews: PreviewProvider {
     static var previews: some View {
-        AddTransactionView()
-            .environmentObject(AppStore())
+        EditTransactionView(
+            transaction: Transaction(
+                userId: "test",
+                accountId: "acc-current",
+                categoryId: "cat-food",
+                eventId: "event-paris",
+                amount: -45.80,
+                description: "Café de Flore"
+            )
+        )
+        .environmentObject(AppStore())
     }
 }

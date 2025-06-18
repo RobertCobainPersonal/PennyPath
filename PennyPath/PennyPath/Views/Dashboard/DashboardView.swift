@@ -98,7 +98,11 @@ struct DashboardView: View {
                 CardView {
                     VStack(spacing: 12) {
                         ForEach(viewModel.upcomingPayments) { transaction in
-                            UpcomingPaymentRow(transaction: transaction)
+                            NavigationLink(destination: TransactionDetailView(transaction: transaction)) {
+                                UpcomingPaymentRow(transaction: transaction)
+                                    .foregroundColor(.primary) // Fix faded text
+                            }
+                            .buttonStyle(.plain)
                             
                             if transaction.id != viewModel.upcomingPayments.last?.id {
                                 Divider()

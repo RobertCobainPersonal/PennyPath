@@ -1,8 +1,9 @@
 //
-//  MainTabView.swift
+//  MainTabView.swift (Updated with TransactionsListView)
 //  PennyPath
 //
 //  Created by Robert Cobain on 16/06/2025.
+//  Updated by Senior iOS Developer on 17/06/2025.
 //
 
 import SwiftUI
@@ -11,7 +12,7 @@ struct MainTabView: View {
     @EnvironmentObject var appStore: AppStore
     @State private var selectedTab = 0
     @State private var showingQuickActions = false
-    @State private var showGlobalFAB = true // NEW: Control FAB visibility
+    @State private var showGlobalFAB = true
     
     var body: some View {
         ZStack {
@@ -33,8 +34,8 @@ struct MainTabView: View {
                     }
                     .tag(1)
                 
-                // Transactions Tab (Placeholder for now)
-                TransactionsPlaceholderView()
+                // Transactions Tab - NOW FULLY FUNCTIONAL! 🎉
+                TransactionsListView(appStore: appStore)
                     .tabItem {
                         Image(systemName: selectedTab == 2 ? "creditcard.fill" : "creditcard")
                         Text("Transactions")
@@ -70,32 +71,6 @@ struct MainTabView: View {
 }
 
 // MARK: - Placeholder Views (Will be replaced with real implementations)
-
-struct TransactionsPlaceholderView: View {
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                Image(systemName: "creditcard")
-                    .font(.system(size: 60))
-                    .foregroundColor(.blue)
-                
-                Text("Transactions")
-                    .font(.title)
-                    .fontWeight(.bold)
-                
-                Text("View and manage all your transactions")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                
-                Spacer()
-            }
-            .padding()
-            .navigationTitle("Transactions")
-            .navigationBarTitleDisplayMode(.large)
-        }
-    }
-}
 
 struct BudgetsPlaceholderView: View {
     var body: some View {
