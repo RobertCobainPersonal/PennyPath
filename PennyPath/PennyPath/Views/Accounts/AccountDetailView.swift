@@ -42,7 +42,7 @@ struct AccountDetailView: View {
                     monthlyActivitySection
                 }
                 
-                // Interactive Charts Section
+                // Interactive Charts Section - NOW WORKING!
                 chartSection
                 
                 // BNPL Plans Section (if applicable)
@@ -216,22 +216,23 @@ struct AccountDetailView: View {
                         Spacer()
                     }
                     
-                    chartPlaceholder
+                    // WORKING CHARTS! 🎉
+                    workingCharts
                 }
             }
         }
     }
     
-    // MARK: - Chart Components
+    // MARK: - Working Charts Implementation
     
-    private var chartPlaceholder: some View {
+    private var workingCharts: some View {
         VStack(spacing: 16) {
             switch selectedChartType {
             case .balanceForecast:
                 if let account = viewModel.account {
                     BalanceForecastChart(
                         account: account,
-                        transactions: appStore.transactions,
+                        transactions: appStore.transactions.filter { $0.accountId == account.id },
                         scheduledTransactions: viewModel.upcomingTransactions
                     )
                 } else {
@@ -240,86 +241,30 @@ struct AccountDetailView: View {
                 }
                 
             case .spendingTrends:
-                spendingTrendsPlaceholder
+                if let account = viewModel.account {
+                    SpendingTrendsChart(
+                        account: account,
+                        transactions: appStore.transactions.filter { $0.accountId == account.id },
+                        categories: appStore.categories
+                    )
+                } else {
+                    Text("Account not found")
+                        .foregroundColor(.secondary)
+                }
                 
             case .paymentSchedule:
-                paymentSchedulePlaceholder
+                if let account = viewModel.account {
+                    PaymentScheduleChart(
+                        account: account,
+                        scheduledTransactions: viewModel.upcomingTransactions
+                    )
+                } else {
+                    Text("Account not found")
+                        .foregroundColor(.secondary)
+                }
             }
         }
-        .frame(minHeight: 180)
-    }
-    
-    // Temporary placeholders for other chart types while we test SimpleBalanceChart
-    private var spendingTrendsPlaceholder: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("Spending by Category")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                Spacer()
-                
-                Text("Coming Soon")
-                    .font(.caption)
-                    .foregroundColor(.blue)
-            }
-            
-            RoundedRectangle(cornerRadius: 8)
-                .fill(LinearGradient(
-                    colors: [Color.orange.opacity(0.3), Color.orange.opacity(0.1)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ))
-                .frame(height: 120)
-                .overlay(
-                    VStack {
-                        Text("📊")
-                            .font(.system(size: 40))
-                        Text("Spending Trends Chart")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("(Interactive category breakdown)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                )
-        }
-    }
-    
-    private var paymentSchedulePlaceholder: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("Payment Calendar")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                Spacer()
-                
-                Text("\(viewModel.upcomingTransactions.count) upcoming")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            RoundedRectangle(cornerRadius: 8)
-                .fill(LinearGradient(
-                    colors: [Color.purple.opacity(0.3), Color.purple.opacity(0.1)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ))
-                .frame(height: 120)
-                .overlay(
-                    VStack {
-                        Text("📅")
-                            .font(.system(size: 40))
-                        Text("Payment Schedule Calendar")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("(Visual timeline of upcoming payments)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                )
-        }
+        .frame(minHeight: 200)
     }
     
     private var bnplPlansSection: some View {

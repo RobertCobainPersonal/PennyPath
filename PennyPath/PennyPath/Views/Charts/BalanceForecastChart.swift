@@ -22,7 +22,7 @@ struct BalanceForecastChart: View {
     
     private var filteredData: [BalanceForecastPoint] {
         if showingProjectedOnly {
-            return chartData.filter { $0.isProjected || $0.transactionType == .current }
+            return chartData.filter { $0.isProjected || $0.date == Date() }
         }
         return chartData
     }
@@ -101,40 +101,44 @@ struct BalanceForecastChart: View {
         }
     }
     
+    // FIXED: Simplified chart implementation using proven patterns
     private var chartView: some View {
         Chart(filteredData, id: \.id) { point in
+            // Main line
             LineMark(
                 x: .value("Date", point.date),
                 y: .value("Balance", point.balance)
             )
-            .foregroundStyle(point.isProjected ? .blue.opacity(0.8) : .primary)
+            .foregroundStyle(point.isProjected ? .blue : .primary)
             .lineStyle(StrokeStyle(
-                lineWidth: point.isProjected ? 2 : 3,
+                lineWidth: 2,
                 dash: point.isProjected ? [5, 3] : []
             ))
             
+            // Area fill
             AreaMark(
                 x: .value("Date", point.date),
                 y: .value("Balance", point.balance)
             )
             .foregroundStyle(
-                LinearGradient(
-                    gradient: Gradient(colors: [
+                .linearGradient(
+                    colors: [
                         point.isProjected ? Color.blue.opacity(0.3) : Color.primary.opacity(0.3),
                         Color.clear
-                    ]),
+                    ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
             )
             
-            if point.transactionType != .none {
+            // Transaction markers (simplified)
+            if point.hasTransaction {
                 PointMark(
                     x: .value("Date", point.date),
                     y: .value("Balance", point.balance)
                 )
-                .foregroundStyle(Color(hex: point.transactionType.color))
-                .symbolSize(point.transactionType == .current ? 100 : 60)
+                .foregroundStyle(point.transactionColor)
+                .symbolSize(60)
             }
         }
         .frame(height: 200)
@@ -160,23 +164,21 @@ struct BalanceForecastChart: View {
                     .fill(Color.clear)
                     .contentShape(Rectangle())
                     .onTapGesture { location in
-                        let plotFrame = geometry[chartProxy.plotAreaFrame]
-                        handleChartTap(at: location, resolvedFrame: plotFrame)
+                        handleChartTap(at: location, in: geometry, with: chartProxy)
                     }
             }
         }
         .chartOverlay { chartProxy in
-            GeometryReader { geometry in
-                let resolvedFrame = geometry[chartProxy.plotAreaFrame]
-                
-                if let selectedPoint = selectedPoint {
-                    let dateX = chartProxy.position(forX: selectedPoint.date) ?? 0
-                    
-                    Rectangle()
-                        .fill(Color.blue.opacity(0.2))
-                        .frame(width: 2)
-                        .position(x: dateX, y: resolvedFrame.midY)
-                        .animation(.easeInOut(duration: 0.2), value: selectedPoint.date)
+            if let selectedPoint = selectedPoint {
+                GeometryReader { geometry in
+                    let plotFrame = geometry[chartProxy.plotAreaFrame]
+                    if let dateX = chartProxy.position(forX: selectedPoint.date) {
+                        Rectangle()
+                            .fill(Color.blue.opacity(0.2))
+                            .frame(width: 2)
+                            .position(x: dateX, y: plotFrame.midY)
+                            .animation(.easeInOut(duration: 0.2), value: selectedPoint.date)
+                    }
                 }
             }
         }
@@ -230,11 +232,13 @@ struct BalanceForecastChart: View {
         }
     }
     
-    private func handleChartTap(at location: CGPoint, resolvedFrame: CGRect) {
-        let relativeX = location.x - resolvedFrame.minX
-        let plotWidth = resolvedFrame.width
+    // FIXED: Simplified tap handling
+    private func handleChartTap(at location: CGPoint, in geometry: GeometryProxy, with chartProxy: ChartProxy) {
+        let plotFrame = geometry[chartProxy.plotAreaFrame]
+        let relativeX = location.x - plotFrame.minX
+        let plotWidth = plotFrame.width
         
-        guard !filteredData.isEmpty else { return }
+        guard !filteredData.isEmpty, plotWidth > 0 else { return }
         
         let dataIndex = Int((relativeX / plotWidth) * Double(filteredData.count - 1))
         let clampedIndex = max(0, min(dataIndex, filteredData.count - 1))
@@ -243,15 +247,19 @@ struct BalanceForecastChart: View {
             selectedPoint = filteredData[clampedIndex]
         }
         
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        // Haptic feedback
+        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+        impactFeedback.impactOccurred()
     }
     
+    // FIXED: Simplified data generation
     private func generateBalanceForecast() -> [BalanceForecastPoint] {
         var points: [BalanceForecastPoint] = []
         let calendar = Calendar.current
         let today = Date()
         var currentBalance = account.balance
         
+        // Historical data (last 7 days) with some variation
         for i in (1...7).reversed() {
             let date = calendar.date(byAdding: .day, value: -i, to: today) ?? today
             let historicalBalance = currentBalance + Double.random(in: -200...100)
@@ -260,17 +268,21 @@ struct BalanceForecastChart: View {
                 date: date,
                 balance: historicalBalance,
                 isProjected: false,
-                transactionType: .none
+                hasTransaction: false,
+                transactionColor: .clear
             ))
         }
         
+        // Today's balance
         points.append(BalanceForecastPoint(
             date: today,
             balance: currentBalance,
             isProjected: false,
-            transactionType: .current
+            hasTransaction: true,
+            transactionColor: .blue
         ))
         
+        // Future projections with scheduled transactions
         var projectedBalance = currentBalance
         
         for i in 1...30 {
@@ -279,51 +291,74 @@ struct BalanceForecastChart: View {
                 calendar.isDate($0.date, inSameDayAs: futureDate)
             }
             
+            var hasTransaction = false
+            var transactionColor: Color = .clear
+            
             for transaction in dayTransactions {
                 projectedBalance += transaction.amount
-                
-                points.append(BalanceForecastPoint(
-                    date: futureDate,
-                    balance: projectedBalance,
-                    isProjected: true,
-                    transactionType: transaction.amount >= 0 ? .income : .expense
-                ))
+                hasTransaction = true
+                transactionColor = transaction.amount >= 0 ? .green : .red
             }
             
-            if dayTransactions.isEmpty {
-                points.append(BalanceForecastPoint(
-                    date: futureDate,
-                    balance: projectedBalance,
-                    isProjected: true,
-                    transactionType: .none
-                ))
-            }
+            points.append(BalanceForecastPoint(
+                date: futureDate,
+                balance: projectedBalance,
+                isProjected: true,
+                hasTransaction: hasTransaction,
+                transactionColor: transactionColor
+            ))
         }
         
         return points.sorted { $0.date < $1.date }
     }
 }
 
-// MARK: - Supporting Types
+// MARK: - Supporting Types (FIXED)
 
 struct BalanceForecastPoint: Identifiable {
     let id = UUID()
     let date: Date
     let balance: Double
     let isProjected: Bool
-    let transactionType: TransactionMarkerType
+    let hasTransaction: Bool
+    let transactionColor: Color
 }
 
-enum TransactionMarkerType {
-    case none, current, income, expense, transfer
-    
-    var color: String {
-        switch self {
-        case .none: return "#000000"
-        case .current: return "#007AFF"
-        case .income: return "#34C759"
-        case .expense: return "#FF3B30"
-        case .transfer: return "#FF9500"
-        }
+// MARK: - Preview Provider
+struct BalanceForecastChart_Previews: PreviewProvider {
+    static var previews: some View {
+        let mockAccount = Account(
+            userId: "test",
+            name: "Test Account",
+            type: .current,
+            balance: 2500.0
+        )
+        
+        let mockScheduledTransactions = [
+            Transaction(
+                userId: "test",
+                accountId: "test",
+                amount: -89.00,
+                description: "British Gas Bill",
+                date: Calendar.current.date(byAdding: .day, value: 7, to: Date())!,
+                isScheduled: true
+            ),
+            Transaction(
+                userId: "test",
+                accountId: "test",
+                amount: 2800.00,
+                description: "Salary",
+                date: Calendar.current.date(byAdding: .day, value: 15, to: Date())!,
+                isScheduled: true
+            )
+        ]
+        
+        BalanceForecastChart(
+            account: mockAccount,
+            transactions: [],
+            scheduledTransactions: mockScheduledTransactions
+        )
+        .padding()
+        .background(Color(.systemGroupedBackground))
     }
 }
