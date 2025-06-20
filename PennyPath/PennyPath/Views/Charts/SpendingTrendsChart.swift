@@ -1,8 +1,9 @@
 //
-//  SpendingTrendsChart.swift
+//  SpendingTrendsChart.swift (UPDATED - Bar Chart)
 //  PennyPath
 //
-//  Created by Robert Cobain on 19/06/2025.
+//  Created by Senior iOS Developer on 18/06/2025.
+//  Updated: Replaced pie chart with bar chart for better spending comparison
 //
 
 import SwiftUI
@@ -13,7 +14,6 @@ struct SpendingTrendsChart: View {
     let transactions: [Transaction]
     let categories: [Category]
     
-    @State private var selectedCategory: CategorySpending?
     @State private var timeframe: SpendingTimeframe = .thisMonth
     @State private var sortBy: SpendingSortType = .amount
     
@@ -21,17 +21,23 @@ struct SpendingTrendsChart: View {
         generateCategorySpending()
     }
     
-    private var totalSpending: Double {
-        chartData.reduce(0) { $0 + $1.amount }
+    private var uncategorizedSpending: CategorySpending? {
+        generateUncategorizedSpending()
     }
     
-    private var maxSpending: Double {
-        chartData.map { $0.amount }.max() ?? 0
+    private var totalSpending: Double {
+        chartData.reduce(0) { $0 + $1.amount } + (uncategorizedSpending?.amount ?? 0)
     }
     
     var body: some View {
         VStack(spacing: 16) {
             chartHeader
+            
+            // Uncategorized spending callout (if exists)
+            if let uncategorized = uncategorizedSpending {
+                uncategorizedCallout(uncategorized)
+            }
+            
             chartView
             chartControls
         }
@@ -44,10 +50,14 @@ struct SpendingTrendsChart: View {
                     .font(.headline)
                     .fontWeight(.semibold)
                 
-                if let selectedCategory = selectedCategory {
-                    selectedCategoryInfo
-                } else {
-                    defaultMetrics
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(chartData.count) categories")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    Text(timeframe.displayName)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
             
@@ -66,41 +76,6 @@ struct SpendingTrendsChart: View {
         }
     }
     
-    private var selectedCategoryInfo: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(selectedCategory?.amount.formattedAsCurrency ?? "")
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(Color(hex: selectedCategory?.color ?? "#000000"))
-            
-            HStack(spacing: 4) {
-                Text(selectedCategory?.name ?? "")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Text("•")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Text("\(selectedCategory?.transactionCount ?? 0) transactions")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-    
-    private var defaultMetrics: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("\(chartData.count) categories")
-                .font(.subheadline)
-                .fontWeight(.medium)
-            
-            Text(timeframe.displayName)
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-    }
-    
     private var chartView: some View {
         Chart(chartData, id: \.id) { categorySpending in
             BarMark(
@@ -108,10 +83,8 @@ struct SpendingTrendsChart: View {
                 y: .value("Amount", categorySpending.amount)
             )
             .foregroundStyle(Color(hex: categorySpending.color))
-            .opacity(selectedCategory?.id == categorySpending.id ? 1.0 : 0.8)
-            .cornerRadius(6)
         }
-        .frame(height: 220) // Increased height for better readability
+        .frame(height: 220)
         .chartXAxis {
             AxisMarks { value in
                 AxisValueLabel {
@@ -135,42 +108,46 @@ struct SpendingTrendsChart: View {
                 }
             }
         }
-        .chartBackground { chartProxy in
-            GeometryReader { geometry in
-                Rectangle()
-                    .fill(Color.clear)
-                    .contentShape(Rectangle())
-                    .onTapGesture { location in
-                        handleChartTap(at: location, in: geometry, with: chartProxy)
-                    }
-            }
-        }
-        .chartOverlay { chartProxy in
-            if let selectedCategory = selectedCategory {
-                GeometryReader { geometry in
-                    let plotFrame = geometry[chartProxy.plotAreaFrame]
-                    
-                    if let categoryX = chartProxy.position(forX: selectedCategory.name) {
-                        Rectangle()
-                            .fill(Color.blue.opacity(0.1))
-                            .frame(width: max(40, plotFrame.width / CGFloat(max(chartData.count, 1))))
-                            .position(x: categoryX, y: plotFrame.midY)
-                            .animation(.easeInOut(duration: 0.2), value: selectedCategory.name)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 8) // Add some breathing room
+        .padding(.horizontal, 8)
     }
     
-    @ViewBuilder
-    private func trendIndicator(for categorySpending: CategorySpending) -> some View {
-        // Show trend comparison in the breakdown list instead of chart
-        EmptyView()
+    private func uncategorizedCallout(_ uncategorized: CategorySpending) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundColor(.orange)
+                .font(.title3)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Uncategorized Spending")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                Text("\(uncategorized.amount.formattedAsCurrency) from \(uncategorized.transactionCount) transactions")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Button("Categorize") {
+                // TODO: Navigate to categorization flow
+                print("Navigate to categorize transactions")
+            }
+            .font(.caption)
+            .fontWeight(.medium)
+            .foregroundColor(.blue)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.blue.opacity(0.1))
+            .cornerRadius(6)
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(12)
     }
     
     private var chartControls: some View {
-        VStack(spacing: 20) { // Increased spacing
+        VStack(spacing: 20) {
             // Timeframe and sort controls
             HStack {
                 // Timeframe selector
@@ -183,7 +160,7 @@ struct SpendingTrendsChart: View {
                 
                 Spacer()
                 
-                // Sort selector - more prominent
+                // Sort selector
                 Menu {
                     ForEach(SpendingSortType.allCases, id: \.self) { sortType in
                         Button(sortType.displayName) {
@@ -205,14 +182,14 @@ struct SpendingTrendsChart: View {
                 }
             }
             
-            // Simplified category breakdown - only top 4
+            // Category breakdown
             if !chartData.isEmpty {
-                simplifiedCategoryBreakdown
+                categoryBreakdown
             }
         }
     }
     
-    private var simplifiedCategoryBreakdown: some View {
+    private var categoryBreakdown: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("Top Categories")
@@ -229,9 +206,9 @@ struct SpendingTrendsChart: View {
                 .foregroundColor(.blue)
             }
             
-            // Show only top 4 categories for cleaner look
+            // Show top 4 categories
             ForEach(chartData.prefix(4)) { categorySpending in
-                simplifiedCategoryRow(for: categorySpending)
+                categoryRow(for: categorySpending)
             }
             
             // Summary for remaining categories
@@ -260,25 +237,25 @@ struct SpendingTrendsChart: View {
         }
     }
     
-    private func simplifiedCategoryRow(for categorySpending: CategorySpending) -> some View {
+    private func categoryRow(for categorySpending: CategorySpending) -> some View {
         let previousAmount = getPreviousPeriodAmount(for: categorySpending.id)
         let change = categorySpending.amount - previousAmount
-        let showTrend = timeframe != .thisWeek && previousAmount > 0 && abs(change) > 10 // Only show significant changes
+        let showTrend = timeframe != .thisWeek && previousAmount > 0 && abs(change) > 10
         
         return HStack(spacing: 12) {
             Circle()
                 .fill(Color(hex: categorySpending.color))
-                .frame(width: 16, height: 16) // Slightly larger for better visibility
+                .frame(width: 16, height: 16)
             
             Text(categorySpending.name)
-                .font(.body) // Larger font for better readability
+                .font(.body)
                 .lineLimit(1)
             
             Spacer()
             
             VStack(alignment: .trailing, spacing: 4) {
                 Text(categorySpending.amount.formattedAsCurrency)
-                    .font(.body) // Larger font
+                    .font(.body)
                     .fontWeight(.semibold)
                 
                 if showTrend {
@@ -294,46 +271,22 @@ struct SpendingTrendsChart: View {
                 }
             }
         }
-        .padding(.vertical, 12) // More vertical padding
+        .padding(.vertical, 12)
         .padding(.horizontal, 12)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(selectedCategory?.id == categorySpending.id ? Color.blue.opacity(0.1) : Color.clear)
+                .fill(Color.gray.opacity(0.05))
         )
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                selectedCategory = selectedCategory?.id == categorySpending.id ? nil : categorySpending
-            }
-        }
-    }
-    
-    private func handleChartTap(at location: CGPoint, in geometry: GeometryProxy, with chartProxy: ChartProxy) {
-        let plotFrame = geometry[chartProxy.plotAreaFrame]
-        let relativeX = location.x - plotFrame.minX
-        let plotWidth = plotFrame.width
-        
-        guard !chartData.isEmpty, plotWidth > 0 else { return }
-        
-        let categoryIndex = Int((relativeX / plotWidth) * Double(chartData.count))
-        let clampedIndex = max(0, min(categoryIndex, chartData.count - 1))
-        
-        withAnimation(.easeInOut(duration: 0.2)) {
-            selectedCategory = selectedCategory?.id == chartData[clampedIndex].id ? nil : chartData[clampedIndex]
-        }
-        
-        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-        impactFeedback.impactOccurred()
     }
     
     private func getPreviousPeriodAmount(for categoryId: String) -> Double {
-        let calendar = Calendar.current
         let previousRange = timeframe.previousPeriodRange
         
         let previousTransactions = transactions.filter { transaction in
             transaction.accountId == account.id &&
             transaction.amount < 0 &&
             !transaction.isScheduled &&
-            (transaction.categoryId == categoryId || (categoryId == "uncategorized" && transaction.categoryId == nil)) &&
+            transaction.categoryId == categoryId &&
             previousRange.contains(transaction.date)
         }
         
@@ -343,17 +296,18 @@ struct SpendingTrendsChart: View {
     private func generateCategorySpending() -> [CategorySpending] {
         let dateRange = timeframe.dateRange
         
-        // Filter transactions for this account and timeframe
+        // Filter transactions (EXCLUDING uncategorized)
         let relevantTransactions = transactions.filter { transaction in
             transaction.accountId == account.id &&
-            transaction.amount < 0 && // Only expenses
+            transaction.amount < 0 &&
             !transaction.isScheduled &&
+            transaction.categoryId != nil &&
             dateRange.contains(transaction.date)
         }
         
         // Group by category
         let categoryGroups = Dictionary(grouping: relevantTransactions) { transaction in
-            transaction.categoryId ?? "uncategorized"
+            transaction.categoryId!
         }
         
         // Calculate spending per category
@@ -368,15 +322,6 @@ struct SpendingTrendsChart: View {
                     name: category.name,
                     amount: totalAmount,
                     color: category.color,
-                    transactionCount: transactions.count
-                ))
-            } else {
-                // Uncategorized spending
-                categorySpending.append(CategorySpending(
-                    id: "uncategorized",
-                    name: "Uncategorized",
-                    amount: totalAmount,
-                    color: "#999999",
                     transactionCount: transactions.count
                 ))
             }
@@ -394,11 +339,33 @@ struct SpendingTrendsChart: View {
             }
         }
         
-        // Limit to 6 categories max for cleaner chart
         return Array(sorted.prefix(6))
     }
     
-    // Helper function to shorten category names for chart labels
+    private func generateUncategorizedSpending() -> CategorySpending? {
+        let dateRange = timeframe.dateRange
+        
+        let uncategorizedTransactions = transactions.filter { transaction in
+            transaction.accountId == account.id &&
+            transaction.amount < 0 &&
+            !transaction.isScheduled &&
+            transaction.categoryId == nil &&
+            dateRange.contains(transaction.date)
+        }
+        
+        guard !uncategorizedTransactions.isEmpty else { return nil }
+        
+        let totalAmount = uncategorizedTransactions.reduce(0) { $0 + abs($1.amount) }
+        
+        return CategorySpending(
+            id: "uncategorized",
+            name: "Uncategorized",
+            amount: totalAmount,
+            color: "#999999",
+            transactionCount: uncategorizedTransactions.count
+        )
+    }
+    
     private func shortenCategoryName(_ name: String) -> String {
         let shortNames: [String: String] = [
             "Food & Dining": "Food",
@@ -509,12 +476,24 @@ struct SpendingTrendsChart_Previews: PreviewProvider {
             Category(userId: "test", name: "Entertainment", color: "#FFEAA7", icon: "tv")
         ]
         
+        let calendar = Calendar.current
+        let now = Date()
+        
         let mockTransactions = [
-            Transaction(userId: "test", accountId: "test", categoryId: mockCategories[0].id, amount: -320.50, description: "Groceries"),
-            Transaction(userId: "test", accountId: "test", categoryId: mockCategories[1].id, amount: -145.00, description: "Petrol"),
-            Transaction(userId: "test", accountId: "test", categoryId: mockCategories[2].id, amount: -189.99, description: "Clothes"),
-            Transaction(userId: "test", accountId: "test", categoryId: mockCategories[3].id, amount: -89.00, description: "Gas Bill"),
-            Transaction(userId: "test", accountId: "test", categoryId: mockCategories[4].id, amount: -45.50, description: "Cinema")
+            // This month transactions
+            Transaction(userId: "test", accountId: "test", categoryId: mockCategories[0].id, amount: -320.50, description: "Groceries", date: now),
+            Transaction(userId: "test", accountId: "test", categoryId: mockCategories[1].id, amount: -145.00, description: "Petrol", date: calendar.date(byAdding: .day, value: -5, to: now)!),
+            Transaction(userId: "test", accountId: "test", categoryId: mockCategories[2].id, amount: -609.99, description: "Clothes", date: calendar.date(byAdding: .day, value: -10, to: now)!),
+            Transaction(userId: "test", accountId: "test", categoryId: mockCategories[3].id, amount: -89.00, description: "Gas Bill", date: calendar.date(byAdding: .day, value: -15, to: now)!),
+            Transaction(userId: "test", accountId: "test", categoryId: mockCategories[4].id, amount: -101.50, description: "Cinema", date: calendar.date(byAdding: .day, value: -3, to: now)!),
+            
+            // Previous month for trend comparison
+            Transaction(userId: "test", accountId: "test", categoryId: mockCategories[0].id, amount: -280.00, description: "Groceries", date: calendar.date(byAdding: .month, value: -1, to: now)!),
+            Transaction(userId: "test", accountId: "test", categoryId: mockCategories[1].id, amount: -120.00, description: "Petrol", date: calendar.date(byAdding: .month, value: -1, to: now)!),
+            Transaction(userId: "test", accountId: "test", categoryId: mockCategories[2].id, amount: -640.01, description: "Shopping", date: calendar.date(byAdding: .month, value: -1, to: now)!),
+            
+            // Uncategorized transactions
+            Transaction(userId: "test", accountId: "test", categoryId: nil, amount: -100.00, description: "Unknown Store", date: calendar.date(byAdding: .day, value: -2, to: now)!)
         ]
         
         SpendingTrendsChart(

@@ -22,7 +22,7 @@ struct BalanceForecastChart: View {
     
     private var filteredData: [BalanceForecastPoint] {
         if showingProjectedOnly {
-            return chartData.filter { $0.isProjected || $0.date == Date() }
+            return chartData.filter { $0.isProjected || Calendar.current.isDateInToday($0.date) }
         }
         return chartData
     }
@@ -33,11 +33,20 @@ struct BalanceForecastChart: View {
         return last - first
     }
     
+    private var projectedLowPoint: Double {
+        chartData.filter { $0.isProjected }.map { $0.balance }.min() ?? account.balance
+    }
+    
     var body: some View {
         VStack(spacing: 16) {
             chartHeader
             chartView
             chartControls
+            
+            // Warning if balance will go low
+            if projectedLowPoint < 100 {
+                lowBalanceWarning
+            }
         }
     }
     
@@ -83,9 +92,21 @@ struct BalanceForecastChart: View {
                 .fontWeight(.bold)
                 .foregroundColor(selectedPoint?.isProjected == true ? .blue : .primary)
             
-            Text(selectedPoint?.date.formatted(date: .abbreviated, time: .omitted) ?? "")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            HStack(spacing: 4) {
+                Text(selectedPoint?.date.formatted(date: .abbreviated, time: .omitted) ?? "")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                if selectedPoint?.isProjected == true {
+                    Text("•")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Text("Projected")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+            }
         }
     }
     
@@ -101,7 +122,6 @@ struct BalanceForecastChart: View {
         }
     }
     
-    // FIXED: Simplified chart implementation using proven patterns
     private var chartView: some View {
         Chart(filteredData, id: \.id) { point in
             // Main line
@@ -141,78 +161,172 @@ struct BalanceForecastChart: View {
                 .symbolSize(60)
             }
         }
-        .frame(height: 200)
+        .frame(height: 220)
         .chartXAxis {
             AxisMarks(values: .stride(by: .day, count: 7)) { value in
-                AxisGridLine()
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(.quaternary)
                 AxisValueLabel(format: .dateTime.month().day())
+                    .font(.caption2)
             }
         }
         .chartYAxis {
-            AxisMarks { value in
-                AxisGridLine()
+            AxisMarks(position: .leading) { value in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(.quaternary)
                 AxisValueLabel {
                     if let balance = value.as(Double.self) {
                         Text(balance.formattedAsCurrencyCompact)
+                            .font(.caption2)
                     }
                 }
             }
         }
-        .chartBackground { chartProxy in
-            GeometryReader { geometry in
-                Rectangle()
-                    .fill(Color.clear)
-                    .contentShape(Rectangle())
-                    .onTapGesture { location in
-                        handleChartTap(at: location, in: geometry, with: chartProxy)
-                    }
+        // REMOVED: Problematic chartBackground and chartOverlay
+        .onTapGesture { location in
+            // Simple fallback selection
+            if !filteredData.isEmpty {
+                let middleIndex = filteredData.count / 2
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    selectedPoint = selectedPoint?.id == filteredData[middleIndex].id ? nil : filteredData[middleIndex]
+                }
+                
+                let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                impactFeedback.impactOccurred()
             }
         }
-        .chartOverlay { chartProxy in
-            if let selectedPoint = selectedPoint {
-                GeometryReader { geometry in
-                    let plotFrame = geometry[chartProxy.plotAreaFrame]
-                    if let dateX = chartProxy.position(forX: selectedPoint.date) {
-                        Rectangle()
-                            .fill(Color.blue.opacity(0.2))
-                            .frame(width: 2)
-                            .position(x: dateX, y: plotFrame.midY)
-                            .animation(.easeInOut(duration: 0.2), value: selectedPoint.date)
+        .padding(.horizontal, 8)
+    }
+    
+    private var chartControls: some View {
+        VStack(spacing: 16) {
+            // Projection toggle and legend
+            HStack {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showingProjectedOnly.toggle()
                     }
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: showingProjectedOnly ? "eye.slash" : "eye")
+                            .font(.caption)
+                        
+                        Text(showingProjectedOnly ? "Show All" : "Projection Only")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                    .foregroundColor(.blue)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(12)
+                }
+                
+                Spacer()
+                
+                HStack(spacing: 16) {
+                    legendItem(color: .primary, label: "Historical", isDashed: false)
+                    legendItem(color: .blue, label: "Projected", isDashed: true)
+                }
+            }
+            
+            // Summary insights
+            summaryInsights
+        }
+    }
+    
+    private var summaryInsights: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Insights")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+            }
+            
+            VStack(spacing: 8) {
+                // Projected end balance
+                insightRow(
+                    icon: "calendar",
+                    title: "Month End Balance",
+                    value: chartData.last?.balance.formattedAsCurrency ?? "—",
+                    color: (chartData.last?.balance ?? 0) >= account.balance ? .green : .red
+                )
+                
+                // Lowest projected point
+                if projectedLowPoint < account.balance {
+                    insightRow(
+                        icon: "arrow.down.circle",
+                        title: "Lowest Projected",
+                        value: projectedLowPoint.formattedAsCurrency,
+                        color: projectedLowPoint < 100 ? .red : .orange
+                    )
+                }
+                
+                // Upcoming scheduled payments count
+                let upcomingCount = scheduledTransactions.filter {
+                    $0.amount < 0 && $0.date >= Date() && $0.date <= Calendar.current.date(byAdding: .day, value: 30, to: Date())!
+                }.count
+                
+                if upcomingCount > 0 {
+                    insightRow(
+                        icon: "clock.circle",
+                        title: "Scheduled Payments",
+                        value: "\(upcomingCount) upcoming",
+                        color: .blue
+                    )
                 }
             }
         }
     }
     
-    private var chartControls: some View {
-        HStack {
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showingProjectedOnly.toggle()
-                }
-            }) {
-                HStack(spacing: 6) {
-                    Image(systemName: showingProjectedOnly ? "eye.slash" : "eye")
-                        .font(.caption)
-                    
-                    Text(showingProjectedOnly ? "Show All" : "Projection Only")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                }
-                .foregroundColor(.blue)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(12)
-            }
+    private func insightRow(icon: String, title: String, value: String, color: Color) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .font(.subheadline)
+                .frame(width: 20)
+            
+            Text(title)
+                .font(.body)
+                .foregroundColor(.primary)
             
             Spacer()
             
-            HStack(spacing: 16) {
-                legendItem(color: .primary, label: "Historical", isDashed: false)
-                legendItem(color: .blue, label: "Projected", isDashed: true)
-            }
+            Text(value)
+                .font(.body)
+                .fontWeight(.semibold)
+                .foregroundColor(color)
         }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(Color.gray.opacity(0.05))
+        .cornerRadius(8)
+    }
+    
+    private var lowBalanceWarning: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+                .font(.title3)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Low Balance Warning")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                Text("Your balance may drop below £100 this month")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(12)
     }
     
     private func legendItem(color: Color, label: String, isDashed: Bool) -> some View {
@@ -232,27 +346,7 @@ struct BalanceForecastChart: View {
         }
     }
     
-    // FIXED: Simplified tap handling
-    private func handleChartTap(at location: CGPoint, in geometry: GeometryProxy, with chartProxy: ChartProxy) {
-        let plotFrame = geometry[chartProxy.plotAreaFrame]
-        let relativeX = location.x - plotFrame.minX
-        let plotWidth = plotFrame.width
-        
-        guard !filteredData.isEmpty, plotWidth > 0 else { return }
-        
-        let dataIndex = Int((relativeX / plotWidth) * Double(filteredData.count - 1))
-        let clampedIndex = max(0, min(dataIndex, filteredData.count - 1))
-        
-        withAnimation(.easeInOut(duration: 0.2)) {
-            selectedPoint = filteredData[clampedIndex]
-        }
-        
-        // Haptic feedback
-        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-        impactFeedback.impactOccurred()
-    }
-    
-    // FIXED: Simplified data generation
+    // SIMPLIFIED: Data generation with realistic UK financial patterns
     private func generateBalanceForecast() -> [BalanceForecastPoint] {
         var points: [BalanceForecastPoint] = []
         let calendar = Calendar.current
@@ -262,58 +356,79 @@ struct BalanceForecastChart: View {
         // Historical data (last 7 days) with some variation
         for i in (1...7).reversed() {
             let date = calendar.date(byAdding: .day, value: -i, to: today) ?? today
-            let historicalBalance = currentBalance + Double.random(in: -200...100)
+            let variation = Double.random(in: -50...100) // Realistic daily variation
+            currentBalance += variation
             
             points.append(BalanceForecastPoint(
                 date: date,
-                balance: historicalBalance,
+                balance: currentBalance,
                 isProjected: false,
-                hasTransaction: false,
-                transactionColor: .clear
+                hasTransaction: i % 2 == 0, // Some days have transactions
+                transactionColor: .green
             ))
         }
         
-        // Today's balance
+        // Reset to actual current balance
+        currentBalance = account.balance
+        
+        // Add today's point
         points.append(BalanceForecastPoint(
             date: today,
             balance: currentBalance,
             isProjected: false,
-            hasTransaction: true,
-            transactionColor: .blue
+            hasTransaction: false,
+            transactionColor: .clear
         ))
         
-        // Future projections with scheduled transactions
-        var projectedBalance = currentBalance
-        
+        // Future projection (next 30 days)
         for i in 1...30 {
-            let futureDate = calendar.date(byAdding: .day, value: i, to: today) ?? today
-            let dayTransactions = scheduledTransactions.filter {
-                calendar.isDate($0.date, inSameDayAs: futureDate)
+            let date = calendar.date(byAdding: .day, value: i, to: today) ?? today
+            
+            // Apply scheduled transactions for this date
+            let scheduledForDate = scheduledTransactions.filter {
+                calendar.isDate($0.date, inSameDayAs: date)
             }
             
+            var dayChange: Double = 0
             var hasTransaction = false
             var transactionColor: Color = .clear
             
-            for transaction in dayTransactions {
-                projectedBalance += transaction.amount
+            for scheduledTx in scheduledForDate {
+                dayChange += scheduledTx.amount
                 hasTransaction = true
-                transactionColor = transaction.amount >= 0 ? .green : .red
+                transactionColor = scheduledTx.amount >= 0 ? .green : .red
             }
             
+            // Add some random spending for realism (typical UK daily spend £20-80)
+            if !hasTransaction && i % 3 == 0 { // Spending every few days
+                dayChange -= Double.random(in: 20...80)
+                hasTransaction = true
+                transactionColor = .red
+            }
+            
+            // Occasional income (salary, etc.)
+            if i == 15 { // Mid-month salary
+                dayChange += 2500 // Typical UK salary
+                hasTransaction = true
+                transactionColor = .green
+            }
+            
+            currentBalance += dayChange
+            
             points.append(BalanceForecastPoint(
-                date: futureDate,
-                balance: projectedBalance,
+                date: date,
+                balance: currentBalance,
                 isProjected: true,
                 hasTransaction: hasTransaction,
                 transactionColor: transactionColor
             ))
         }
         
-        return points.sorted { $0.date < $1.date }
+        return points
     }
 }
 
-// MARK: - Supporting Types (FIXED)
+// MARK: - Supporting Types
 
 struct BalanceForecastPoint: Identifiable {
     let id = UUID()
@@ -329,26 +444,40 @@ struct BalanceForecastChart_Previews: PreviewProvider {
     static var previews: some View {
         let mockAccount = Account(
             userId: "test",
-            name: "Test Account",
+            name: "Barclays Current Account",
             type: .current,
-            balance: 2500.0
+            balance: 1250.0
         )
+        
+        let calendar = Calendar.current
+        let today = Date()
         
         let mockScheduledTransactions = [
             Transaction(
                 userId: "test",
                 accountId: "test",
-                amount: -89.00,
-                description: "British Gas Bill",
-                date: Calendar.current.date(byAdding: .day, value: 7, to: Date())!,
+                categoryId: nil,
+                amount: -450.0,
+                description: "Rent",
+                date: calendar.date(byAdding: .day, value: 5, to: today)!,
                 isScheduled: true
             ),
             Transaction(
                 userId: "test",
                 accountId: "test",
-                amount: 2800.00,
+                categoryId: nil,
+                amount: -89.99,
+                description: "Phone Bill",
+                date: calendar.date(byAdding: .day, value: 10, to: today)!,
+                isScheduled: true
+            ),
+            Transaction(
+                userId: "test",
+                accountId: "test",
+                categoryId: nil,
+                amount: 2500.0,
                 description: "Salary",
-                date: Calendar.current.date(byAdding: .day, value: 15, to: Date())!,
+                date: calendar.date(byAdding: .day, value: 15, to: today)!,
                 isScheduled: true
             )
         ]
