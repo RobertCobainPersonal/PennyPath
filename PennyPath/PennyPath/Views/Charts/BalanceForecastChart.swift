@@ -37,8 +37,15 @@ struct BalanceForecastChart: View {
         chartData.filter { $0.isProjected }.map { $0.balance }.min() ?? account.balance
     }
     
+    private var monthEndBalance: Double {
+        chartData.last?.balance ?? account.balance
+    }
+    
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
+            // REFINED: Minimal context line only
+            contextDescription
+            
             chartHeader
             chartView
             chartControls
@@ -50,13 +57,20 @@ struct BalanceForecastChart: View {
         }
     }
     
+    // REFINED: Minimal context instead of redundant title
+    private var contextDescription: some View {
+        HStack {
+            Text("30-day projection with scheduled payments")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+    }
+    
+    // REFINED: Lead with current balance, eliminate redundant titles
     private var chartHeader: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text("30-Day Forecast")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
                 if let selectedPoint = selectedPoint {
                     selectedPointInfo
                 } else {
@@ -77,8 +91,8 @@ struct BalanceForecastChart: View {
                         .foregroundColor(balanceChange >= 0 ? .green : .red)
                     
                     Text(balanceChange.formattedAsCurrency)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                        .font(.title2)
+                        .fontWeight(.bold)
                         .foregroundColor(balanceChange >= 0 ? .green : .red)
                 }
             }
@@ -94,16 +108,16 @@ struct BalanceForecastChart: View {
             
             HStack(spacing: 4) {
                 Text(selectedPoint?.date.formatted(date: .abbreviated, time: .omitted) ?? "")
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundColor(.secondary)
                 
                 if selectedPoint?.isProjected == true {
                     Text("•")
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundColor(.secondary)
                     
                     Text("Projected")
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundColor(.blue)
                 }
             }
@@ -112,12 +126,14 @@ struct BalanceForecastChart: View {
     
     private var defaultMetrics: some View {
         VStack(alignment: .leading, spacing: 2) {
+            // PRIMARY METRIC: Current balance
             Text(account.balance.formattedAsCurrency)
                 .font(.title2)
                 .fontWeight(.bold)
             
+            // CONTEXT: What this represents
             Text("Current Balance")
-                .font(.caption)
+                .font(.subheadline)
                 .foregroundColor(.secondary)
         }
     }
@@ -161,7 +177,7 @@ struct BalanceForecastChart: View {
                 .symbolSize(60)
             }
         }
-        .frame(height: 220)
+        .frame(height: 260) // Increased for better readability
         .chartXAxis {
             AxisMarks(values: .stride(by: .day, count: 7)) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
@@ -182,7 +198,6 @@ struct BalanceForecastChart: View {
                 }
             }
         }
-        // REMOVED: Problematic chartBackground and chartOverlay
         .onTapGesture { location in
             // Simple fallback selection
             if !filteredData.isEmpty {
@@ -199,7 +214,7 @@ struct BalanceForecastChart: View {
     }
     
     private var chartControls: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             // Projection toggle and legend
             HStack {
                 Button(action: {
@@ -236,7 +251,7 @@ struct BalanceForecastChart: View {
     }
     
     private var summaryInsights: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("Insights")
                     .font(.subheadline)
@@ -246,13 +261,13 @@ struct BalanceForecastChart: View {
                 Spacer()
             }
             
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 // Projected end balance
                 insightRow(
                     icon: "calendar",
                     title: "Month End Balance",
-                    value: chartData.last?.balance.formattedAsCurrency ?? "—",
-                    color: (chartData.last?.balance ?? 0) >= account.balance ? .green : .red
+                    value: monthEndBalance.formattedAsCurrency,
+                    color: monthEndBalance >= account.balance ? .green : .red
                 )
                 
                 // Lowest projected point
@@ -287,7 +302,7 @@ struct BalanceForecastChart: View {
             Image(systemName: icon)
                 .foregroundColor(color)
                 .font(.subheadline)
-                .frame(width: 20)
+                .frame(width: 24)
             
             Text(title)
                 .font(.body)
@@ -300,10 +315,10 @@ struct BalanceForecastChart: View {
                 .fontWeight(.semibold)
                 .foregroundColor(color)
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
         .background(Color.gray.opacity(0.05))
-        .cornerRadius(8)
+        .cornerRadius(10)
     }
     
     private var lowBalanceWarning: some View {

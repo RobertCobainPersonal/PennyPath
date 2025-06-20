@@ -29,32 +29,47 @@ struct AccountDetailView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 20) {
-                // Account header section
-                accountHeaderSection
+                // Account header - now using extracted component
+                AccountHeaderSection(account: viewModel.account)
                 
-                // Account-specific information section
+                // Account-specific information
                 if let account = viewModel.account {
-                    accountSpecificSection(for: account)
+                    AccountSpecificInfoSection(account: account, viewModel: viewModel)
                 }
                 
-                // Current month activity
+                // Monthly activity summary
                 if viewModel.currentMonthSpending > 0 || viewModel.currentMonthIncome > 0 {
-                    monthlyActivitySection
+                    MonthlyActivitySection(viewModel: viewModel)
                 }
                 
-                // Interactive Charts Section - NOW WORKING!
-                chartSection
+                // Charts section - now using extracted component with refined UX
+                if let account = viewModel.account {
+                    ChartSection(
+                        selectedChartType: $selectedChartType,
+                        account: account,
+                        viewModel: viewModel,
+                        appStore: appStore
+                    )
+                }
                 
-                // BNPL Plans Section (if applicable)
+                // BNPL Plans (if applicable)
                 if viewModel.account?.type == .bnpl && viewModel.outstandingBNPLPlans > 0 {
-                    bnplPlansSection
+                    BNPLPlansSection(viewModel: viewModel)
                 }
                 
-                // Upcoming payments first (more actionable)
-                upcomingTransactionsSection
+                // Upcoming transactions
+                UpcomingTransactionsSection(
+                    viewModel: viewModel,
+                    showingUpcomingTransactions: $showingUpcomingTransactions,
+                    showingAddTransaction: $showingAddTransaction
+                )
                 
-                // Recent transactions section (now second)
-                recentTransactionsSection
+                // Recent transactions
+                RecentTransactionsSection(
+                    viewModel: viewModel,
+                    showingRecentTransactions: $showingRecentTransactions,
+                    showingAddTransaction: $showingAddTransaction
+                )
             }
             .padding(.horizontal)
             .padding(.bottom, 100)
@@ -62,10 +77,14 @@ struct AccountDetailView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle(viewModel.account?.name ?? "Account")
         .navigationBarTitleDisplayMode(.large)
-        .navigationBarBackButtonHidden(false)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                enhancedThreeDotsMenu
+                Button(action: {
+                    showingEditAccount = true
+                }) {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundColor(.blue)
+                }
             }
         }
         .sheet(isPresented: $showingEditAccount) {
@@ -74,802 +93,423 @@ struct AccountDetailView: View {
             }
         }
         .sheet(isPresented: $showingAddTransaction) {
-            AddTransactionView(preselectedAccountId: accountId)
-        }
-        .onReceive(appStore.$accounts) { accounts in
-            if !accounts.contains(where: { $0.id == accountId }) {
-                dismiss()
+            if let account = viewModel.account {
+                AddTransactionView(preselectedAccountId: account.id)
             }
         }
         .onAppear {
-            // Hide the global FAB when this view appears
-            NotificationCenter.default.post(name: Notification.Name("HideGlobalFAB"), object: nil)
-        }
-        .onDisappear {
-            // Show the global FAB when this view disappears
-            NotificationCenter.default.post(name: Notification.Name("ShowGlobalFAB"), object: nil)
-        }
-    }
-    
-    // MARK: - View Components
-    
-    private var accountHeaderSection: some View {
-        Group {
+            // Set default chart type based on account type
             if let account = viewModel.account {
-                CardView {
-                    VStack(spacing: 16) {
-                        HStack {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(hex: account.type.color).opacity(0.15))
-                                    .frame(width: 60, height: 60)
-                                
-                                Image(systemName: account.type.icon)
-                                    .font(.title)
-                                    .foregroundColor(Color(hex: account.type.color))
-                            }
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(account.name)
-                                    .font(.title2)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.primary)
-                                
-                                Text(account.type.displayName)
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Spacer()
-                        }
-                        
-                        Divider()
-                        
-                        VStack(spacing: 12) {
-                            HStack {
-                                Text("Current Balance")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                
-                                Spacer()
-                                
-                                Text(account.balance.formattedAsCurrency)
-                                    .font(.title)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(account.balance >= 0 ? .primary : .red)
-                            }
-                            
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Total Transactions")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    
-                                    Text("\(viewModel.transactionCount)")
-                                        .font(.headline)
-                                        .fontWeight(.semibold)
-                                }
-                                
-                                Spacer()
-                                
-                                VStack(alignment: .trailing, spacing: 4) {
-                                    Text("Account Type")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    
-                                    Text(account.type.displayName)
-                                        .font(.headline)
-                                        .fontWeight(.semibold)
-                                        .lineLimit(1)
-                                }
-                            }
-                        }
-                    }
-                }
+                selectedChartType = ChartType.defaultType(for: account.type)
             }
-        }
-    }
-    
-    @ViewBuilder
-    private func accountSpecificSection(for account: Account) -> some View {
-        switch account.type {
-        case .credit:
-            creditCardSpecificSection(for: account)
-        case .loan:
-            loanSpecificSection(for: account)
-        case .bnpl:
-            bnplSpecificSection(for: account)
-        default:
-            EmptyView()
-        }
-    }
-    
-    private var chartSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                sectionHeader(title: "Account Insights", icon: "chart.line.uptrend.xyaxis")
-                
-                Spacer()
-                
-                Picker("Chart Type", selection: $selectedChartType) {
-                    ForEach(ChartType.allCases, id: \.self) { type in
-                        Text(type.shortName).tag(type)
-                    }
-                }
-                .pickerStyle(SegmentedPickerStyle())
-                .frame(width: 200)
-            }
-            
-            CardView {
-                VStack(spacing: 16) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(selectedChartType.displayName)
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                            
-                            Text(selectedChartType.subtitle)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                    }
-                    
-                    // WORKING CHARTS! 🎉
-                    workingCharts
-                }
-            }
-        }
-    }
-    
-    // MARK: - Working Charts Implementation
-    
-    private var workingCharts: some View {
-        VStack(spacing: 16) {
-            switch selectedChartType {
-            case .balanceForecast:
-                if let account = viewModel.account {
-                    BalanceForecastChart(
-                        account: account,
-                        transactions: appStore.transactions.filter { $0.accountId == account.id },
-                        scheduledTransactions: viewModel.upcomingTransactions
-                    )
-                } else {
-                    Text("Account not found")
-                        .foregroundColor(.secondary)
-                }
-                
-            case .spendingTrends:
-                if let account = viewModel.account {
-                    SpendingTrendsChart(
-                        account: account,
-                        transactions: appStore.transactions.filter { $0.accountId == account.id },
-                        categories: appStore.categories
-                    )
-                } else {
-                    Text("Account not found")
-                        .foregroundColor(.secondary)
-                }
-                
-            case .paymentSchedule:
-                if let account = viewModel.account {
-                    PaymentScheduleChart(
-                        account: account,
-                        scheduledTransactions: viewModel.upcomingTransactions
-                    )
-                } else {
-                    Text("Account not found")
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .frame(minHeight: 200)
-    }
-    
-    private var bnplPlansSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Active BNPL Plans", icon: "calendar.badge.clock")
-            
-            CardView {
-                VStack(spacing: 12) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Outstanding Plans")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            
-                            Text("\(viewModel.outstandingBNPLPlans)")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .foregroundColor(.orange)
-                        }
-                        
-                        Spacer()
-                        
-                        if let nextPayment = viewModel.nextBNPLPayment {
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Text("Next Payment")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                
-                                VStack(alignment: .trailing, spacing: 2) {
-                                    Text(abs(nextPayment.amount).formattedAsCurrency)
-                                        .font(.headline)
-                                        .fontWeight(.semibold)
-                                    
-                                    Text(nextPayment.date.formatted(date: .abbreviated, time: .omitted))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                    }
-                    
-                    Divider()
-                    
-                    Button(action: {
-                        print("View all BNPL plans")
-                    }) {
-                        HStack {
-                            Text("View All Plans & Schedule")
-                                .fontWeight(.medium)
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                        }
-                        .foregroundColor(.blue)
-                    }
-                }
-            }
-        }
-    }
-    
-    private var upcomingTransactionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showingUpcomingTransactions.toggle()
-                }
-            }) {
-                HStack {
-                    sectionHeader(title: "Upcoming Transactions", icon: "calendar.badge.clock")
-                    
-                    Spacer()
-                    
-                    if !viewModel.upcomingTransactions.isEmpty {
-                        Text("\(viewModel.upcomingTransactions.count)")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color(.tertiarySystemFill))
-                            .cornerRadius(8)
-                    }
-                    
-                    Image(systemName: showingUpcomingTransactions ? "chevron.up" : "chevron.down")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-            
-            if showingUpcomingTransactions {
-                if viewModel.upcomingTransactions.isEmpty {
-                    emptyStateView(
-                        icon: "checkmark.circle",
-                        title: "All caught up!",
-                        subtitle: "No upcoming payments in the next 30 days"
-                    )
-                } else {
-                    CardView {
-                        VStack(spacing: 12) {
-                            ForEach(viewModel.upcomingTransactions) { transaction in
-                                TransactionRowView(
-                                    transaction: transaction,
-                                    showAccount: false,    // Remove redundant account name
-                                    showEvent: true,       // Keep event tags
-                                    showDate: true,        // Show temporal context
-                                    style: .compact,       // Use compact style
-                                    showDueContext: true,  // Show "Due in X days"
-                                    onTap: {
-                                        print("Tapped upcoming transaction: \(transaction.description)")
-                                    }
-                                )
-                                
-                                if transaction.id != viewModel.upcomingTransactions.last?.id {
-                                    Divider()
-                                        .padding(.leading, 64) // Align with TransactionRowView
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    private var recentTransactionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showingRecentTransactions.toggle()
-                }
-            }) {
-                HStack {
-                    sectionHeader(title: "Recent Transactions", icon: "list.bullet")
-                    
-                    Spacer()
-                    
-                    if viewModel.transactionCount > 10 {
-                        Button("View All") {
-                            // TODO: Navigate to full transaction list
-                        }
-                        .font(.subheadline)
-                        .foregroundColor(.blue)
-                    }
-                    
-                    Image(systemName: showingRecentTransactions ? "chevron.up" : "chevron.down")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-            
-            if showingRecentTransactions {
-                if viewModel.recentTransactions.isEmpty {
-                    emptyStateView(
-                        icon: "plus.circle",
-                        title: "No transactions yet",
-                        subtitle: "Add your first transaction to get started"
-                    )
-                } else {
-                    CardView {
-                        VStack(spacing: 0) {
-                            ForEach(viewModel.recentTransactions) { transaction in
-                                TransactionRowView(
-                                    transaction: transaction,
-                                    showAccount: false, // Remove redundant account name
-                                    showEvent: true,    // Keep event tags
-                                    showDate: true,     // Show transaction dates
-                                    style: .compact,    // Use compact style
-                                    onTap: {
-                                        print("Tapped recent transaction: \(transaction.description)")
-                                    }
-                                )
-                                
-                                if transaction.id != viewModel.recentTransactions.last?.id {
-                                    Divider()
-                                        .padding(.leading, 64) // Consistent divider alignment
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    private var monthlyActivitySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "This Month", icon: "calendar")
-            
-            HStack(spacing: 16) {
-                if viewModel.currentMonthSpending > 0 {
-                    CardView {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "arrow.down.circle.fill")
-                                    .foregroundColor(.red)
-                                    .font(.title2)
-                                
-                                Spacer()
-                                
-                                Text("Spent")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Text(viewModel.currentMonthSpending.formattedAsCurrency)
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .foregroundColor(.red)
-                        }
-                    }
-                }
-                
-                if viewModel.currentMonthIncome > 0 {
-                    CardView {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "arrow.up.circle.fill")
-                                    .foregroundColor(.green)
-                                    .font(.title2)
-                                
-                                Spacer()
-                                
-                                Text("Received")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Text(viewModel.currentMonthIncome.formattedAsCurrency)
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .foregroundColor(.green)
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    private var enhancedThreeDotsMenu: some View {
-        Menu {
-            Button(action: {
-                showingAddTransaction = true
-            }) {
-                HStack {
-                    Image(systemName: "plus.circle")
-                    Text("Add Transaction")
-                }
-            }
-            
-            Button(action: {
-                print("Transfer money from/to this account")
-            }) {
-                HStack {
-                    Image(systemName: "arrow.left.arrow.right")
-                    Text("Transfer Money")
-                }
-            }
-            
-            Divider()
-            
-            Button("Edit Account") {
-                showingEditAccount = true
-            }
-            
-            Button("View All Transactions") {
-                print("View all transactions")
-            }
-            
-            Divider()
-            
-            Button(action: {
-                print("Export account data")
-            }) {
-                HStack {
-                    Image(systemName: "square.and.arrow.up")
-                    Text("Export Data")
-                }
-            }
-            
-            if viewModel.account?.type == .bnpl {
-                Button(action: {
-                    print("Manage BNPL plans")
-                }) {
-                    HStack {
-                        Image(systemName: "calendar.badge.clock")
-                        Text("Manage BNPL Plans")
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .fontWeight(.semibold)
-        }
-    }
-    
-    // MARK: - Account-Specific Sections
-    
-    private func creditCardSpecificSection(for account: Account) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Credit Information", icon: "creditcard")
-            
-            CardView {
-                VStack(spacing: 16) {
-                    if let creditLimit = account.creditLimit {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Credit Limit")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                
-                                Text(creditLimit.formattedAsCurrency)
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                            }
-                            
-                            Spacer()
-                            
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Text("Available Credit")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                
-                                Text((account.availableCredit ?? 0).formattedAsCurrency)
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.green)
-                            }
-                        }
-                        
-                        Divider()
-                        
-                        if let utilization = account.creditUtilization {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Text("Credit Utilization")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                    
-                                    Spacer()
-                                    
-                                    Text("\(Int(utilization * 100))%")
-                                        .font(.headline)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(utilization > 0.7 ? .red : utilization > 0.3 ? .orange : .green)
-                                }
-                                
-                                ProgressView(value: utilization, total: 1.0)
-                                    .progressViewStyle(LinearProgressViewStyle(tint: utilization > 0.7 ? .red : utilization > 0.3 ? .orange : .green))
-                                    .scaleEffect(x: 1, y: 2, anchor: .center)
-                                
-                                Text("Keep utilization below 30% for optimal credit score")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    private func loanSpecificSection(for account: Account) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Loan Information", icon: "house")
-            
-            CardView {
-                VStack(spacing: 16) {
-                    if let originalAmount = account.originalLoanAmount,
-                       let progress = account.loanProgress {
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Loan Progress")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                
-                                Spacer()
-                                
-                                Text("\(Int(progress * 100))% paid")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.blue)
-                            }
-                            
-                            ProgressView(value: progress, total: 1.0)
-                                .progressViewStyle(LinearProgressViewStyle(tint: .blue))
-                                .scaleEffect(x: 1, y: 2, anchor: .center)
-                            
-                            HStack {
-                                Text("Original: \(originalAmount.formattedAsCurrency)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                
-                                Spacer()
-                                
-                                Text("Remaining: \(abs(account.balance).formattedAsCurrency)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        
-                        Divider()
-                    }
-                    
-                    HStack {
-                        if let startDate = account.loanStartDate {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Start Date")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                
-                                Text(startDate.formatted(date: .abbreviated, time: .omitted))
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        if let termMonths = account.loanTermMonths {
-                            VStack(alignment: .center, spacing: 4) {
-                                Text("Term")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                
-                                Text("\(termMonths) months")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        if let interestRate = account.interestRate {
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Text("Interest Rate")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                
-                                Text("\(interestRate, specifier: "%.1f")%")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                            }
-                        }
-                    }
-                    
-                    if let monthlyPayment = account.monthlyPayment {
-                        Divider()
-                        
-                        HStack {
-                            Text("Monthly Payment")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            
-                            Spacer()
-                            
-                            Text(monthlyPayment.formattedAsCurrency)
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    private func bnplSpecificSection(for account: Account) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "BNPL Information", icon: "calendar.badge.clock")
-            
-            CardView {
-                VStack(spacing: 16) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Provider")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            
-                            Text(account.bnplProvider ?? "Unknown")
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                        }
-                        
-                        Spacer()
-                        
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text("Outstanding Plans")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            
-                            Text("\(viewModel.outstandingBNPLPlans)")
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.orange)
-                        }
-                    }
-                    
-                    if viewModel.nextBNPLPayment != nil {
-                        Divider()
-                        
-                        HStack {
-                            Text("Next Payment")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            
-                            Spacer()
-                            
-                            if let nextPayment = viewModel.nextBNPLPayment {
-                                VStack(alignment: .trailing, spacing: 2) {
-                                    Text(abs(nextPayment.amount).formattedAsCurrency)
-                                        .font(.headline)
-                                        .fontWeight(.semibold)
-                                    
-                                    Text(nextPayment.date.formatted(date: .abbreviated, time: .omitted))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    // MARK: - Helper Views
-    
-    private func sectionHeader(title: String, icon: String) -> some View {
-        HStack {
-            Image(systemName: icon)
-                .foregroundColor(.blue)
-                .font(.title3)
-            
-            Text(title)
-                .font(.title3)
-                .fontWeight(.semibold)
-            
-            Spacer()
-        }
-    }
-    
-    private func emptyStateView(icon: String, title: String, subtitle: String) -> some View {
-        CardView {
-            VStack(spacing: 12) {
-                Button(action: {
-                    showingAddTransaction = true
-                }) {
-                    Image(systemName: icon)
-                        .font(.system(size: 40))
-                        .foregroundColor(.blue) // Make it actionable blue instead of secondary
-                }
-                .buttonStyle(.plain)
-                
-                Text(title)
-                    .font(.headline)
-                    .fontWeight(.medium)
-                
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                
-                Button("Add Transaction") {
-                    showingAddTransaction = true
-                }
-                .foregroundColor(.blue)
-                .padding(.top, 8)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 20)
         }
     }
 }
 
-// MARK: - Chart Types Enum
-enum ChartType: String, CaseIterable {
-    case balanceForecast = "balance"
-    case spendingTrends = "spending"
-    case paymentSchedule = "schedule"
+// MARK: - Account Specific Info Section
+
+struct AccountSpecificInfoSection: View {
+    let account: Account
+    let viewModel: AccountDetailViewModel
     
-    var displayName: String {
-        switch self {
-        case .balanceForecast: return "Balance Forecast"
-        case .spendingTrends: return "Spending Trends"
-        case .paymentSchedule: return "Payment Schedule"
+    var body: some View {
+        Group {
+            switch account.type {
+            case .credit:
+                CreditCardInfoSection(account: account)
+            case .loan:
+                LoanInfoSection(account: account)
+            case .bnpl:
+                BNPLInfoSection(account: account, viewModel: viewModel)
+            default:
+                EmptyView()
+            }
         }
     }
+}
+
+// MARK: - Credit Card Info Section
+
+struct CreditCardInfoSection: View {
+    let account: Account
     
-    var shortName: String {
-        switch self {
-        case .balanceForecast: return "Balance"
-        case .spendingTrends: return "Trends"
-        case .paymentSchedule: return "Schedule"
+    var body: some View {
+        CardView {
+            VStack(spacing: 12) {
+                HStack {
+                    SectionHeaderView(title: "Credit Information", icon: "creditcard")
+                    Spacer()
+                }
+                
+                VStack(spacing: 8) {
+                    DetailRowView(
+                        label: "Credit Limit",
+                        value: account.creditLimit?.formattedAsCurrency ?? "Not set"
+                    )
+                    
+                    if let creditLimit = account.creditLimit, creditLimit > 0 {
+                        let utilization = abs(account.balance) / creditLimit
+                        
+                        PercentageDetailRowView(
+                            label: "Utilization",
+                            percentage: utilization,
+                            showProgress: true
+                        )
+                    }
+                }
+            }
         }
     }
+}
+
+// MARK: - Loan Info Section
+
+struct LoanInfoSection: View {
+    let account: Account
     
-    var subtitle: String {
-        switch self {
-        case .balanceForecast: return "30-day projection with scheduled payments"
-        case .spendingTrends: return "Category breakdown and merchant analysis"
-        case .paymentSchedule: return "Upcoming payments calendar view"
+    var body: some View {
+        CardView {
+            VStack(spacing: 12) {
+                HStack {
+                    SectionHeaderView(title: "Loan Information", icon: "banknote")
+                    Spacer()
+                }
+                
+                VStack(spacing: 8) {
+                    if let originalAmount = account.originalLoanAmount {
+                        CurrencyDetailRowView(
+                            label: "Original Amount",
+                            amount: originalAmount,
+                            showDivider: true
+                        )
+                    }
+                    
+                    if let remainingMonths = account.remainingLoanMonths {
+                        DetailRowView(
+                            label: "Remaining Term",
+                            value: "\(remainingMonths) months",
+                            showDivider: true
+                        )
+                    }
+                    
+                    if let monthlyPayment = account.monthlyPayment {
+                        CurrencyDetailRowView(
+                            label: "Monthly Payment",
+                            amount: monthlyPayment,
+                            isPositive: false,
+                            showDivider: true
+                        )
+                    }
+                    
+                    if let completion = account.loanCompletionPercentage {
+                        PercentageDetailRowView(
+                            label: "Progress",
+                            percentage: completion,
+                            showProgress: true,
+                            progressColor: .blue
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - BNPL Info Section
+
+struct BNPLInfoSection: View {
+    let account: Account
+    let viewModel: AccountDetailViewModel
+    
+    var body: some View {
+        CardView {
+            VStack(spacing: 12) {
+                HStack {
+                    SectionHeaderView(title: "BNPL Information", icon: "calendar.badge.clock")
+                    Spacer()
+                }
+                
+                VStack(spacing: 8) {
+                    if let provider = account.bnplProvider {
+                        DetailRowView(label: "Provider", value: provider)
+                    }
+                    
+                    DetailRowView(
+                        label: "Outstanding Plans",
+                        value: "\(viewModel.outstandingBNPLPlans)"
+                    )
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Monthly Activity Section
+
+struct MonthlyActivitySection: View {
+    let viewModel: AccountDetailViewModel
+    
+    var body: some View {
+        CardView {
+            VStack(spacing: 12) {
+                HStack {
+                    SectionHeaderView(title: "This Month", icon: "calendar")
+                    Spacer()
+                }
+                
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Income")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(viewModel.currentMonthIncome.formattedAsCurrency)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.green)
+                    }
+                    
+                    Spacer()
+                    
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("Spending")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(viewModel.currentMonthSpending.formattedAsCurrency)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - BNPL Plans Section
+
+struct BNPLPlansSection: View {
+    let viewModel: AccountDetailViewModel
+    
+    var body: some View {
+        CardView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    SectionHeaderView(title: "BNPL Plans", icon: "calendar.badge.clock")
+                    Spacer()
+                    
+                    StatusDetailRowView(
+                        label: "",
+                        status: "\(viewModel.outstandingBNPLPlans) active",
+                        statusColor: .blue
+                    )
+                }
+                
+                Text("Next payment due in 3 days")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                Button("View All Plans") {
+                    // TODO: Navigate to BNPL plans view
+                }
+                .font(.subheadline)
+                .foregroundColor(.blue)
+            }
+        }
+    }
+}
+
+// MARK: - Upcoming Transactions Section
+
+struct UpcomingTransactionsSection: View {
+    let viewModel: AccountDetailViewModel
+    @Binding var showingUpcomingTransactions: Bool
+    @Binding var showingAddTransaction: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                SectionHeaderView(title: "Upcoming Transactions", icon: "clock")
+                
+                Spacer()
+                
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showingUpcomingTransactions.toggle()
+                    }
+                }) {
+                    Image(systemName: showingUpcomingTransactions ? "chevron.up" : "chevron.down")
+                        .foregroundColor(.blue)
+                        .font(.caption)
+                }
+            }
+            
+            if showingUpcomingTransactions {
+                CardView {
+                    if viewModel.upcomingTransactions.isEmpty {
+                        EmptyUpcomingTransactionsView(showingAddTransaction: $showingAddTransaction)
+                    } else {
+                        FilledUpcomingTransactionsView(upcomingTransactions: viewModel.upcomingTransactions)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Recent Transactions Section
+
+struct RecentTransactionsSection: View {
+    let viewModel: AccountDetailViewModel
+    @Binding var showingRecentTransactions: Bool
+    @Binding var showingAddTransaction: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                SectionHeaderView(title: "Recent Transactions", icon: "list.bullet")
+                
+                Spacer()
+                
+                Button("View All") {
+                    // TODO: Navigate to transactions list filtered by this account
+                }
+                .font(.caption)
+                .foregroundColor(.blue)
+                
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showingRecentTransactions.toggle()
+                    }
+                }) {
+                    Image(systemName: showingRecentTransactions ? "chevron.up" : "chevron.down")
+                        .foregroundColor(.blue)
+                        .font(.caption)
+                }
+            }
+            
+            if showingRecentTransactions {
+                CardView {
+                    if viewModel.recentTransactions.isEmpty {
+                        EmptyRecentTransactionsView(showingAddTransaction: $showingAddTransaction)
+                    } else {
+                        FilledRecentTransactionsView(recentTransactions: viewModel.recentTransactions)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Empty States
+
+struct EmptyUpcomingTransactionsView: View {
+    @Binding var showingAddTransaction: Bool
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "calendar.badge.plus")
+                .foregroundColor(.gray)
+                .font(.title2)
+            
+            Text("No upcoming transactions")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            
+            Button("Schedule Payment") {
+                showingAddTransaction = true
+            }
+            .font(.caption)
+            .foregroundColor(.blue)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+    }
+}
+
+struct FilledUpcomingTransactionsView: View {
+    let upcomingTransactions: [Transaction]
+    
+    var body: some View {
+        LazyVStack(spacing: 0) {
+            ForEach(Array(upcomingTransactions.prefix(5).enumerated()), id: \.element.id) { index, transaction in
+                TransactionRowView(
+                    transaction: transaction,
+                    showAccount: false,
+                    showEvent: true,
+                    showDate: false,
+                    style: .fullWidth,
+                    showDueContext: true,
+                    onTap: {
+                        print("Tapped upcoming transaction: \(transaction.description)")
+                    }
+                )
+                
+                if index < min(upcomingTransactions.count, 5) - 1 {
+                    Divider()
+                        .padding(.horizontal)
+                }
+            }
+            
+            if upcomingTransactions.count > 5 {
+                Button("View All (\(upcomingTransactions.count))") {
+                    // TODO: Navigate to filtered transactions list
+                }
+                .font(.subheadline)
+                .foregroundColor(.blue)
+                .padding(.vertical, 12)
+            }
+        }
+    }
+}
+
+struct EmptyRecentTransactionsView: View {
+    @Binding var showingAddTransaction: Bool
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "tray")
+                .foregroundColor(.gray)
+                .font(.title2)
+            
+            Text("No recent transactions")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            
+            Button("Add Transaction") {
+                showingAddTransaction = true
+            }
+            .foregroundColor(.blue)
+            .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+    }
+}
+
+struct FilledRecentTransactionsView: View {
+    let recentTransactions: [Transaction]
+    
+    var body: some View {
+        LazyVStack(spacing: 0) {
+            ForEach(Array(recentTransactions.prefix(5).enumerated()), id: \.element.id) { index, transaction in
+                TransactionRowView(
+                    transaction: transaction,
+                    showAccount: false,
+                    showEvent: true,
+                    showDate: true,
+                    style: .fullWidth,
+                    showDueContext: false,
+                    onTap: {
+                        print("Tapped recent transaction: \(transaction.description)")
+                    }
+                )
+                
+                if index < min(recentTransactions.count, 5) - 1 {
+                    Divider()
+                        .padding(.horizontal)
+                }
+            }
         }
     }
 }

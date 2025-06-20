@@ -30,7 +30,10 @@ struct SpendingTrendsChart: View {
     }
     
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
+            // REFINED: Minimal context line only
+            contextDescription
+            
             chartHeader
             
             // Uncategorized spending callout (if exists)
@@ -43,22 +46,29 @@ struct SpendingTrendsChart: View {
         }
     }
     
+    // REFINED: Minimal context instead of redundant title
+    private var contextDescription: some View {
+        HStack {
+            Text("Category breakdown and merchant analysis")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+    }
+    
+    // REFINED: Lead with key metrics, eliminate redundant titles
     private var chartHeader: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Spending by Category")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+                // PRIMARY METRIC: Number of categories
+                Text("\(chartData.count) categories")
+                    .font(.title2)
+                    .fontWeight(.bold)
                 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(chartData.count) categories")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    
-                    Text(timeframe.displayName)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                // CONTEXT: Timeframe
+                Text(timeframe.displayName)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
             }
             
             Spacer()
@@ -69,8 +79,8 @@ struct SpendingTrendsChart: View {
                     .foregroundColor(.secondary)
                 
                 Text(totalSpending.formattedAsCurrency)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .font(.title2)
+                    .fontWeight(.bold)
                     .foregroundColor(.primary)
             }
         }
@@ -84,7 +94,7 @@ struct SpendingTrendsChart: View {
             )
             .foregroundStyle(Color(hex: categorySpending.color))
         }
-        .frame(height: 220)
+        .frame(height: 260) // Increased for better readability
         .chartXAxis {
             AxisMarks { value in
                 AxisValueLabel {
@@ -271,7 +281,7 @@ struct SpendingTrendsChart: View {
                 }
             }
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 14)
         .padding(.horizontal, 12)
         .background(
             RoundedRectangle(cornerRadius: 8)
